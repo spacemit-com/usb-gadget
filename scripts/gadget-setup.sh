@@ -20,6 +20,7 @@ USB_UDC_DTS=$( [ -e /proc/device-tree/default_udc ] && tr -d '\000' < /proc/devi
 [ "$USB_UDC" ] || USB_UDC=$USB_UDC_DTS
 [ "$USB_UDC" ] || USB_UDC=$(ls /sys/class/udc | awk "NR==1{print}")
 
+[ "$MAXPACKAGESIZE" ] || MAXPACKAGESIZE=1024
 CONFIGFS=/sys/kernel/config
 GADGET_PATH=$CONFIGFS/usb_gadget/spacemit
 GFUNC_PATH=$GADGET_PATH/functions
@@ -300,8 +301,8 @@ adb_clean()
 ### Setup uvc frame interval for yuv 360p with 15fps (7MBps).
 uvc_frame_1_(){
 	UVC_FRAME_WDIR=$1
-	echo 666666 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
-	echo 55296000 > $UVC_FRAME_WDIR/dwMinBitRate
+	echo 1000000 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
+	echo 49152000 > $UVC_FRAME_WDIR/dwMinBitRate
 	echo 55296000 > $UVC_FRAME_WDIR/dwMaxBitRate
 }
 
@@ -344,9 +345,9 @@ configure_uvc_format_()
 	echo $UVC_DISPLAY_H > $UVC_FRAME_WDIR/wHeight
 	echo $(( $UVC_DISPLAY_W * $UVC_DISPLAY_H * 2 )) > $UVC_FRAME_WDIR/dwMaxVideoFrameBufferSize
 	if [ "$HIGH_FRAMERATE" -eq 1 ]; then
-		uvc_frame_4_ $UVC_FRAME_WDIR
+		uvc_frame_1_ $UVC_FRAME_WDIR
 	else
-		uvc_frame_4_ $UVC_FRAME_WDIR
+		uvc_frame_1_ $UVC_FRAME_WDIR
 	fi
 	cat <<EOF > $UVC_FRAME_WDIR/dwFrameInterval
 166666
@@ -373,10 +374,12 @@ clean_uvc_format_()
 clean_uvc_format_all_()
 {
 	clean_uvc_format_ uncompressed/y 640 360
+	clean_uvc_format_ uncompressed/y 640 480
 	clean_uvc_format_ uncompressed/y 1280 720
 	clean_uvc_format_ uncompressed/y 1920 1080
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/streaming/uncompressed/y
 	clean_uvc_format_ mjpeg/m 640 360
+	clean_uvc_format_ mjpeg/m 640 480
 	clean_uvc_format_ mjpeg/m 1280 720
 	clean_uvc_format_ mjpeg/m 1920 1080
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/streaming/mjpeg/m
@@ -424,6 +427,26 @@ configure_uvc_maxpacket_()
 	echo 15  > $FUNCTION/streaming_maxburst
 }
 
+configure_uvc_xu_()
+{
+	# Include an Extension Unit if the kernel supports that
+	CONTROL_PATH=$GFUNC_PATH/$UVC_INSTANCE/control/
+	if [ -d $CONTROL_PATH/extensions ]; then
+		mkdir $CONTROL_PATH/extensions/xu.0
+		pushd $CONTROL_PATH/extensions/xu.0
+		# Set the bUnitID of the Processing Unit as the XU's source
+		echo 2 > baSourceID
+		# Set this XU as the source for the default output terminal
+		cat bUnitID > ../../terminal/output/default/bSourceID
+		# Flag some arbitrary controls. This sets alternating bits of the
+		# first byte of bmControls active.
+		echo 0x55 > bmControls
+		# Set the GUID
+		echo -e -n "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10" > guidExtensionCode
+		popd
+	fi
+}
+
 ### End UVC Common
 ## UVC
 
@@ -432,23 +455,21 @@ uvc_config()
 	gadget_debug "add a uvc function instance"
 	UVC_INSTANCE=uvc.usb0
 	mkdir -p $GFUNC_PATH/$UVC_INSTANCE
-	configure_uvc_format_ uncompressed/y 640 360 1
+	configure_uvc_format_ uncompressed/y 640 360 0
+	configure_uvc_format_ uncompressed/y 640 480 0
 	configure_uvc_format_ uncompressed/y 1280 720 1
 	configure_uvc_format_ uncompressed/y 1920 1080 1
 	configure_uvc_format_ mjpeg/m 640 360 1
 	configure_uvc_format_ mjpeg/m 1280 720 1
 	configure_uvc_format_ mjpeg/m 1920 1080 1
-	## TODO: H.264 and HEVC(265) is not mainlined, the recent patchset on mailinglist
-	## would break existing configfs api, if we adopt need rewrite and debug.
-	## Latest Ongoing: https://patchwork.kernel.org/project/linux-usb/patch/20240711082304.1363-1-quic_akakum@quicinc.com/
-	## A Previously Superseded Patch, FYI: https://lore.kernel.org/lkml/20220216081651.9089-1-3090101217@zju.edu.cn/T/#rdf3333bbb8abe2a868b292fa07074e871955749b
-	# configure_uvc_format_ h264/h 640 360 1
+	## TODO: H.264 and HEVC(265)
+	## Latest Ongoing: https://patchwork.kernel.org/project/linux-usb/patch/20240711082304.1363-1-quic_akakum@quicinc.com/# configure_uvc_format_ h264/h 640 360 1
 	# configure_uvc_format_ h264/h 1280 720 1
 	# configure_uvc_format_ h264/h 1920 1080 1
 	# configure_uvc_format_ hevc/h 640 360 1
 	# configure_uvc_format_ hevc/h 1280 720 1
 	# configure_uvc_format_ hevc/h 1920 1080 1
-	configure_uvc_maxpacket_ 2048
+	configure_uvc_maxpacket_ $MAXPACKAGESIZE
 	configure_uvc_link_
 }
 
