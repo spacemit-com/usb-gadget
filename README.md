@@ -1,28 +1,33 @@
-# uvcgadget - UVC gadget C library
+## 编译
 
-uvcgadget is a pure C library that implements handling of UVC gadget functions.
-
-## Utilities
-
-- uvc-gadget - Sample test application
-
-## Build instructions:
-
-To compile:
+导出交叉工具链到环境变量
 
 ```
-$ meson build
-$ ninja -C build
+$ make
+//copy scripts/gadget-setup.sh and uvc-gadget-new to k1 board
 ```
 
-## Cross compiling instructions:
 
-Cross compilation can be managed by meson. Please read the directions at
-https://mesonbuild.com/Cross-compilation.html for detailed guidance on using
-meson.
 
-In brief summary:
+## UVC
+
 ```
-$ meson build --cross <meson cross file>
-$ ninja -C build
+$ /etc/init.d/S50adb-setup stop
+$ gadget-setup.sh uvc
+$ uvc-gadget-new
 ```
+
+注:  如果出不了图了需要重新启动uvc-gadget-new
+
+
+
+## RNDIS
+
+```
+gadget-setup.sh rndis
+```
+
+### PC端设置
+
+![img_v3_02dr_d968d898-83fe-4f63-a236-1dade8dc0c4g](20240819-112732.jpg)
+
