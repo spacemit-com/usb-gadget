@@ -94,3 +94,4 @@ gadget-setup.sh role <控制器/otg名称> <device或者host>
 # 举例：
 gadget-setup.sh role c0a00000.dwc3 device
 ```
+注：切换至device模式时如果对应USB接口存在额外的vbus配置，需要手动关闭，见具体方案文档。
