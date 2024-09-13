@@ -1,58 +1,36 @@
-#!/bin/sh
-# WARNING: This setup script does NOT support humbird rootfs!!!
-# Supported: bianbu-linux, bianbu-desktop
+#!/bin/bash
+# In busybox ash, should use /bin/sh, but bianbu cannot use /bin/sh
 
 name=`basename $0`
-SCRIPT_VERSION="v0.4"
+SCRIPT_VERSION="v0.5-SUPPORTROLESW"
 CONFIG_FILE=$HOME/.usb_config
 
 # USB Descriptors
 VENDOR_ID="0x361c"
 PRODUC_ID="0x0007"
-MANUAF_STR="Spacemit"
-PRODUC_STR="K1 Composite Device"
+MANUAF_STR="SpacemiT"
+PRODUC_STR="SpacemiT Composite Device"
 SERNUM_STR="20211102"
-[ "$ADB_BOARD_SN" ] || ADB_BOARD_SN=$( [ -e /proc/device-tree/serial-number ] && tr -d '\000' < /proc/device-tree/serial-number )
-[ "$ADB_BOARD_SN" ] && SERNUM_STR=$ADB_BOARD_SN
+SN_PATH="/proc/device-tree/serial-number"
+[ "$BOARD_SN" ] || BOARD_SN=$( [ -e $SN_PATH ] && tr -d '\000' < $SN_PATH )
+[ "$BOARD_SN" ] && SERNUM_STR=$BOARD_SN
 
-# Select default_udc as UDC from DTS if exist, use the first in sysfs otherwise
-USB_UDC_DTS=$( [ -e /proc/device-tree/default_udc ] && tr -d '\000' < /proc/device-tree/default_udc )
-[ "$USB_UDC" ] || USB_UDC=$USB_UDC_DTS
-[ "$USB_UDC" ] || USB_UDC=$(ls /sys/class/udc | awk "NR==1{print}")
-
-[ "$MAXPACKAGESIZE" ] || MAXPACKAGESIZE=1024
 CONFIGFS=/sys/kernel/config
 GADGET_PATH=$CONFIGFS/usb_gadget/spacemit
 GFUNC_PATH=$GADGET_PATH/functions
 GCONFIG=$GADGET_PATH/configs/c.1
+[ "$USB_UDC" ] || USB_UDC=$(ls /sys/class/udc | awk "NR==1{print}")
 
-# Debug Ramdisk for MSC without any argument
+# MSC Debug Ramdisk
 RAMDISK_PATH=/var/sdcard
 TMPFS_FOUND=`mount | grep tmpfs | grep -v devtmpfs | awk '{print $3}' | grep '/dev/shm' | wc -l`
 [ "$TMPFS_FOUND" -eq 1 ] && RAMDISK_PATH=/dev/shm/sdcard
 TMPFS_FOUND=`mount | grep tmpfs | grep -v devtmpfs | awk '{print $3}' | grep '/tmp' | wc -l`
 [ "$TMPFS_FOUND" -eq 1 ] && RAMDISK_PATH=/tmp/sdcard
-
 # SCSI Target
 NAA="naa.6001405c3214b06a"
 CORE_DIR=$CONFIGFS/target/core
 USB_GDIR=$CONFIGFS/target/usb_gadget
-
-print_info()
-{
-	echo "SpacemiT gadget-setup tool $SCRIPT_VERSION"
-	echo
-	echo "Board Model: `tr -d '\000' < /proc/device-tree/model`"
-	echo "General Config Info: $VENDOR_ID/$PRODUC_ID/$SERNUM_STR/$MANUAF_STR/$PRODUC_STR."
-	echo "Config File Path: $CONFIG_FILE"
-	echo "MSC Ramdisk Path (selected from tmpfs mounting point): $RAMDISK_PATH"
-	echo "UASP SCSI NAA: $NAA"
-	echo "UASP Target Dir: $USB_GDIR"
-	echo "Available UDCs: `ls  -1 /sys/class/udc/ |  tr '\n' ' '`"
-	echo "DTS default UDC: $USB_UDC_DTS"
-	echo "DTS Serial Number: $ADB_BOARD_SN"
-	echo
-}
 
 # Global variables to record configured functions
 MSC=disabled
@@ -61,10 +39,9 @@ UAS_ARG=""
 MSC_ARG=""
 ADB=disabled
 UVC=disabled
-UVCH=disabled
 RNDIS=disabled
 FUNCTION_CNT=0
-DEBUG=okay
+DEBUG=
 
 usage()
 {
@@ -79,14 +56,15 @@ usage()
 	echo -e "\t$name [pause|resume]"
 	echo -e "\n$name info: show gadget info"
 	echo -e "\nhint: udc is automatically selected, you can"
-	echo -e "\toverride udc idx with env USB_UDC_IDX="
+	echo -e "\toverride udc with env USB_UDC_IDX=[integer]/USB_UDC=[str]"
+	echo -e "Set USB role-switch:"
+	echo -e "\t$name role <rolesw-name> [host|device]"
 	echo ""
 	echo "Functions and arguments supported:"
 	echo -e "\tmsc(:dev/file)  Mass Storage(Bulk-Only)."
 	echo -e "\tuas(:dev/file)       Mass Storage(UASP)."
 	echo -e "\tadb       Android Debug Bridge over USB."
 	echo -e "\tuvc                              Webcam."
-	# uvc1, uvc2 are for debug usage
 	echo -e "\trndis                RNDIS NIC function."
 	echo -e "\nSpacemiT gadget-setup tool $SCRIPT_VERSION"
 	echo ""
@@ -116,8 +94,10 @@ g_remove()
 }
 
 ## MSC
+
 msc_ramdisk_()
 {
+	# Debug Ramdisk for MSC without any argument
 	gadget_info "msc: ramdisk: $RAMDISK_PATH/disk.img"
 	mkdir -p $RAMDISK_PATH/sda
 	dd if=/dev/zero of=$RAMDISK_PATH/disk.img bs=1M count=1038
@@ -186,12 +166,8 @@ uas_config()
 		echo "$name: no device specificed, select rd_mcp as backstore"
 		BACKSTORE_DIR=$CORE_DIR/rd_mcp_0/ramdisk
 		mkdir -p $BACKSTORE_DIR
-		# 128MB pure ramdisk
-		if [ $UAS_PERFORMACE ]; then
-			gadgdet_info "Warning: user asked for performance test, uasp storage will broke rw reqs"
-		else
-			echo rd_pages=200000 > $BACKSTORE_DIR/control
-		fi
+		# ramdisk
+		echo rd_pages=200000 > $BACKSTORE_DIR/control
 	elif [ -b $DEVICE ]; then
 		echo "$name: block device, select iblock as backstore"
 		BACKSTORE_DIR=$CORE_DIR/iblock_0/iblock
@@ -297,58 +273,59 @@ adb_clean()
 }
 
 ## UVC
-### UVC Common
-### Setup uvc frame interval for yuv 360p with 15fps (7MBps).
-uvc_frame_1_(){
-	UVC_FRAME_WDIR=$1
-	echo 1000000 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
-	echo 49152000 > $UVC_FRAME_WDIR/dwMinBitRate
-	echo 55296000 > $UVC_FRAME_WDIR/dwMaxBitRate
-}
-
-### Setup uvc frame interval for at most yuv 360p with 60fps (13MBps)
-uvc_frame_2_(){
-	UVC_FRAME_WDIR=$1
-	echo 333333 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
-	echo 110592000 > $UVC_FRAME_WDIR/dwMinBitRate
-	echo 221184000 > $UVC_FRAME_WDIR/dwMaxBitRate
-}
-
-### Setup uvc frame interval for at most yuv 720p with 60fps (14~52MBps)
-uvc_frame_3_(){
-	UVC_FRAME_WDIR=$1
-	echo 333333 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
-	echo 110592000 > $UVC_FRAME_WDIR/dwMinBitRate
-	echo 442276000 > $UVC_FRAME_WDIR/dwMaxBitRate
-}
-
-### Setup uvc frame interval for at most yuv 1080p with 30fps (14~52MBps)
-uvc_frame_4_(){
-	UVC_FRAME_WDIR=$1
-	echo 333333 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
-	echo 110592000 > $UVC_FRAME_WDIR/dwMinBitRate
-	echo 442276000 > $UVC_FRAME_WDIR/dwMaxBitRate
-}
 
 ### Setup streaming/ directory.
-configure_uvc_format_()
+add_uvc_fmt_resolution()
 {
 	FORMAT=$1 # $1 format "uncompressed/y" / "mjpeg/m"
 	UVC_DISPLAY_W=$2 # $2 Width
 	UVC_DISPLAY_H=$3 # $3 Height
-	HIGH_FRAMERATE=$4 # $4 HIGH_FRAMERATE 0/1
+	FRAMERATE=$4 # $4 HIGH_FRAMERATE 0/1
 	#https://docs.kernel.org/usb/gadget_uvc.html
 	UVC_MJPEG_PRE_PATH=$GFUNC_PATH/$UVC_INSTANCE/streaming/$FORMAT
 	UVC_FRAME_WDIR=${UVC_MJPEG_PRE_PATH}/${UVC_DISPLAY_H}p
+	gadget_debug "UVC_FRAME_WDIR: $UVC_FRAME_WDIR"
 	mkdir -p $UVC_FRAME_WDIR
 	echo $UVC_DISPLAY_W > $UVC_FRAME_WDIR/wWidth
 	echo $UVC_DISPLAY_H > $UVC_FRAME_WDIR/wHeight
-	echo $(( $UVC_DISPLAY_W * $UVC_DISPLAY_H * 2 )) > $UVC_FRAME_WDIR/dwMaxVideoFrameBufferSize
-	if [ "$HIGH_FRAMERATE" -eq 1 ]; then
-		uvc_frame_1_ $UVC_FRAME_WDIR
-	else
-		uvc_frame_1_ $UVC_FRAME_WDIR
+	DW_MAX_VD_FB_SZ=$(( $UVC_DISPLAY_W * $UVC_DISPLAY_H * 2 ))
+	if [ "$FORMAT"=="mjpeg/m" ]; then
+		if [ -e "$CONFIG_FILE" ]; then
+			# Attempt to parse the dwMaxVideoFrameBufferSize from ~/.uvcg_config
+			parsed_value=$(grep "^mjpeg $UVC_DISPLAY_W $UVC_DISPLAY_H" ~/.uvcg_config | awk '{print $4}')
+			# Check if the value was found; if not, keep the pre-calculated value
+			if [ ! -z "$parsed_value" ]; then
+				DW_MAX_VD_FB_SZ="$parsed_value"
+			fi
+			gadget_debug "format: $FORMAT, dw_max_video_fb_size: $DW_MAX_VD_FB_SZ"
+		fi
 	fi
+	echo $DW_MAX_VD_FB_SZ > $UVC_FRAME_WDIR/dwMaxVideoFrameBufferSize
+	# Many camera host app only shows the default framerate of a format in their list
+	# So we set it here.
+	if [ "$FRAMERATE" -eq 20 ]; then
+		echo 500000 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
+	elif [ "$FRAMERATE" -eq 15 ]; then
+		echo 666666 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
+	elif [ "$FRAMERATE" -eq 30 ]; then
+		echo 333333 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
+	elif [ "$FRAMERATE" -eq 60 ]; then
+		echo 166666 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
+	elif [ "$FRAMERATE" -eq 10 ]; then
+		echo 1000000 > $UVC_FRAME_WDIR/dwDefaultFrameInterval
+	fi
+	# lowest framerate in this script is 10fps
+	DW_MIN_BITRATE=$(( 10 * $DW_MAX_VD_FB_SZ * 8 ))
+	DW_MAX_BITRATE=$(( $FRAMERATE * $DW_MAX_VD_FB_SZ * 8 ))
+	if [ "$FORMAT"=="mjpeg/m" ]; then
+		# MJPEG can compress the data at least 5:1,
+		# let's set the ratio to 4
+		DW_MIN_BITRATE=$(( $DW_MIN_BITRATE / 4 ))
+		gadget_debug "format: $FORMAT, dw_min_br: $DW_MIN_BITRATE"
+	fi
+	echo $DW_MIN_BITRATE > $UVC_FRAME_WDIR/dwMinBitRate
+	echo $DW_MAX_BITRATE > $UVC_FRAME_WDIR/dwMaxBitRate
+	echo -e "\t$UVC_INSTANCE will support ${FORMAT} ${UVC_DISPLAY_W}x${UVC_DISPLAY_H}@${FRAMERATE}p"
 	cat <<EOF > $UVC_FRAME_WDIR/dwFrameInterval
 166666
 333333
@@ -356,36 +333,28 @@ configure_uvc_format_()
 500000
 666666
 1000000
-1333333
-2000000
 EOF
 }
 
-clean_uvc_format_()
+destroy_one_uvc_format_()
 {
 	FORMAT=$1
-	UVC_DISPLAY_W=$2
-	UVC_DISPLAY_H=$3
 	UVC_MJPEG_PRE_PATH=$GFUNC_PATH/$UVC_INSTANCE/streaming/$FORMAT
-	UVC_FRAME_WDIR=${UVC_MJPEG_PRE_PATH}/${UVC_DISPLAY_H}p
-	g_remove $UVC_FRAME_WDIR
+	for ppath in ${UVC_MJPEG_PRE_PATH}/*p; do
+		g_remove $ppath
+	done
 }
 
-clean_uvc_format_all_()
+destroy_all_uvc_format_()
 {
-	clean_uvc_format_ uncompressed/y 640 360
-	clean_uvc_format_ uncompressed/y 640 480
-	clean_uvc_format_ uncompressed/y 1280 720
-	clean_uvc_format_ uncompressed/y 1920 1080
+
+	destroy_one_uvc_format_ uncompressed/y
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/streaming/uncompressed/y
-	clean_uvc_format_ mjpeg/m 640 360
-	clean_uvc_format_ mjpeg/m 640 480
-	clean_uvc_format_ mjpeg/m 1280 720
-	clean_uvc_format_ mjpeg/m 1920 1080
+	destroy_one_uvc_format_ mjpeg/m
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/streaming/mjpeg/m
 }
 
-configure_uvc_link_()
+create_uvc_link_()
 {
 	mkdir $GFUNC_PATH/$UVC_INSTANCE/streaming/header/h
 	ln -s $GFUNC_PATH/$UVC_INSTANCE/streaming/mjpeg/m/ $GFUNC_PATH/$UVC_INSTANCE/streaming/header/h/m
@@ -398,7 +367,7 @@ configure_uvc_link_()
 	ln -s $GFUNC_PATH/$UVC_INSTANCE/control/header/h/ $GFUNC_PATH/$UVC_INSTANCE/control/class/ss/
 }
 
-clean_uvc_link_()
+destroy_uvc_link_()
 {
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/control/class/fs/h
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/control/class/ss/h
@@ -411,87 +380,64 @@ clean_uvc_link_()
 	g_remove $GFUNC_PATH/$UVC_INSTANCE/streaming/header/h
 }
 
-clean_uvc_()
+destroy_uvc_()
 {
-	clean_uvc_link_
-	clean_uvc_format_all_
+	destroy_uvc_link_
+	destroy_all_uvc_format_
 	g_remove $GFUNC_PATH/$UVC_INSTANCE
 }
 
-configure_uvc_maxpacket_()
+set_uvc_maxpacket_()
 {
 	MAX=$1 ## $1 1024/2048/3072
+	BURST=$2 ## $2 1-15
 	FUNCTION=$GFUNC_PATH/$UVC_INSTANCE
-	gadget_info "Setting streaming_maxpacket to $MAX"
+	echo -e "\t$UVC_INSTANCE set streaming_maxpacket=$MAX, streaming_maxburst=$BURST"
 	echo $MAX > $FUNCTION/streaming_maxpacket
-	echo 15  > $FUNCTION/streaming_maxburst
+	echo $BURST  > $FUNCTION/streaming_maxburst
 }
-
-configure_uvc_xu_()
-{
-	# Include an Extension Unit if the kernel supports that
-	CONTROL_PATH=$GFUNC_PATH/$UVC_INSTANCE/control/
-	if [ -d $CONTROL_PATH/extensions ]; then
-		mkdir $CONTROL_PATH/extensions/xu.0
-		pushd $CONTROL_PATH/extensions/xu.0
-		# Set the bUnitID of the Processing Unit as the XU's source
-		echo 2 > baSourceID
-		# Set this XU as the source for the default output terminal
-		cat bUnitID > ../../terminal/output/default/bSourceID
-		# Flag some arbitrary controls. This sets alternating bits of the
-		# first byte of bmControls active.
-		echo 0x55 > bmControls
-		# Set the GUID
-		echo -e -n "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10" > guidExtensionCode
-		popd
-	fi
-}
-
-### End UVC Common
-## UVC
 
 uvc_config()
 {
-	gadget_debug "add a uvc function instance"
-	UVC_INSTANCE=uvc.usb0
+	UVC_INSTANCE=uvc.0
+	gadget_info "Adding a uvc function instance $UVC_INSTANCE..."
 	mkdir -p $GFUNC_PATH/$UVC_INSTANCE
-	configure_uvc_format_ uncompressed/y 640 360 0
-	configure_uvc_format_ uncompressed/y 640 480 0
-	configure_uvc_format_ uncompressed/y 1280 720 1
-	configure_uvc_format_ uncompressed/y 1920 1080 1
-	configure_uvc_format_ mjpeg/m 640 360 1
-	configure_uvc_format_ mjpeg/m 1280 720 1
-	configure_uvc_format_ mjpeg/m 1920 1080 1
-	## TODO: H.264 and HEVC(265)
-	## Latest Ongoing: https://patchwork.kernel.org/project/linux-usb/patch/20240711082304.1363-1-quic_akakum@quicinc.com/# configure_uvc_format_ h264/h 640 360 1
-	# configure_uvc_format_ h264/h 1280 720 1
-	# configure_uvc_format_ h264/h 1920 1080 1
-	# configure_uvc_format_ hevc/h 640 360 1
-	# configure_uvc_format_ hevc/h 1280 720 1
-	# configure_uvc_format_ hevc/h 1920 1080 1
-	configure_uvc_maxpacket_ $MAXPACKAGESIZE
-	configure_uvc_link_
+	# add_uvc_fmt_resolution <format> <width> <height> <framerate>
+	add_uvc_fmt_resolution uncompressed/y 320 240 30
+	add_uvc_fmt_resolution uncompressed/y 640 360 30
+	add_uvc_fmt_resolution uncompressed/y 640 480 30
+	add_uvc_fmt_resolution uncompressed/y 640 640 30
+	add_uvc_fmt_resolution uncompressed/y 1280 720 30
+	add_uvc_fmt_resolution uncompressed/y 1920 1080 30
+	add_uvc_fmt_resolution uncompressed/y 3840 2160 30
+	add_uvc_fmt_resolution mjpeg/m 640 360 30
+	add_uvc_fmt_resolution mjpeg/m 640 480 30
+	add_uvc_fmt_resolution mjpeg/m 1280 720 30
+	add_uvc_fmt_resolution mjpeg/m 1920 1080 30
+	add_uvc_fmt_resolution mjpeg/m 3840 2160 30
+	set_uvc_maxpacket_ 3072 15
+	create_uvc_link_
 }
 
 uvc_link()
 {
 	gadget_debug "add uvc to usb config, unlike adb, you have to run ur own uvc-gadget app"
-	UVC_INSTANCE=uvc.usb0
+	UVC_INSTANCE=uvc.0
 	ln -s $GFUNC_PATH/$UVC_INSTANCE/ $GCONFIG/$UVC_INSTANCE
 }
 
 uvc_unlink()
 {
 	gadget_debug "remove uvc from usb config"
-	UVC_INSTANCE=uvc.usb0
+	UVC_INSTANCE=uvc.0
 	g_remove $GCONFIG/$UVC_INSTANCE
 }
 
 uvc_clean()
 {
 	gadget_debug "clean uvc"
-	UVC_INSTANCE=uvc.usb0
-	clean_uvc_
+	UVC_INSTANCE=uvc.0
+	destroy_uvc_
 }
 
 ## RNDIS
@@ -552,24 +498,40 @@ mtp_clean()
 no_udc()
 {
 	gadget_info "Echo none to udc"
-	logger "We are now trying to echo None to UDC......"
+	gadget_info "We are now trying to echo None to UDC......"
 	[ -e $GADGET_PATH/UDC ] || die "gadget not configured yet"
 	[ `cat $GADGET_PATH/UDC` ] && echo "" > $GADGET_PATH/UDC
 	gadget_info "echo none to UDC successfully done"
-	logger "echo none to UDC done."
+	gadget_info "echo none to UDC done."
+}
+
+give_hint_to_which_have_udc_()
+{
+	for config_path in "/sys/kernel/config/usb_gadget/"*; do
+		udc_path="$config_path/UDC"
+		is_here=$(cat $udc_path | grep $selected_udc | wc -l)
+		if [ "$is_here" -gt 0 ]; then
+			gadget_info "ERROR: Your udc is occupied by: $udc_path"
+		fi
+	done
 }
 
 echo_udc()
 {
-	[ $USBDEV_IDX ] || USBDEV_IDX=1
 	[ -e $GADGET_PATH/UDC ] || die "gadget not configured yet"
 	[ `cat $GADGET_PATH/UDC` ] && die "UDC `cat $GADGET_PATH/UDC` already been set"
 	if [ "$USB_UDC_IDX" ]; then
-		selected_udc=$(ls /sys/class/udc | awk "NR==$USBDEV_IDX{print}")
+		selected_udc=$(ls /sys/class/udc | awk "NR==$USB_UDC_IDX{print}")
 	else
 		selected_udc=$USB_UDC
-		gadget_info "Selected udc idx $USBDEV_IDX: $selected_udc"
+		gadget_info "Selected udc by name: $selected_udc"
 		gadget_info "We are now trying to echo $selected_udc to UDC......"
+	fi
+	our_udc_occupied=$(cat /sys/kernel/config/usb_gadget/*/UDC | grep $selected_udc | wc -l)
+	if [ "$our_udc_occupied" -gt 0 ]; then
+		give_hint_to_which_have_udc_
+		gadget_info "ERROR: configfs preserved, run $name resume after conflict resolved"
+		exit 127
 	fi
 	echo  $selected_udc > $GADGET_PATH/UDC
 	gadget_info "echo $selected_udc to UDC done"
@@ -621,7 +583,6 @@ glink()
 	[ $RNDIS  = okay ] && rndis_link
 	[ $ADB  = okay ] && adb_link
 	[ $UVC  = okay ] && uvc_link
-	[ $UVCH  = okay ] && uvch_link
 }
 
 gunlink()
@@ -630,7 +591,7 @@ gunlink()
 	msc_unlink
 	uas_unlink
 	rndis_unlink
-	# adb_unlink
+	adb_unlink
 	uvc_unlink
 	# Remove strings:
 	gadget_info "remove strings of c.1."
@@ -643,9 +604,15 @@ gunlink()
 select_one()
 {
 	func=$1
-	
+
 	if [[ "$func" == "#"* ]];then
 		gadget_debug "met hashtag, skip"
+		return
+	fi
+
+	if [[ "$func" == USB_UDC=* ]]; then
+		USB_UDC=$(echo $func | awk -F= '{print $2}')
+		gadget_info "Set USB_UDC to $USB_UDC from config file"
 		return
 	fi
 
@@ -656,9 +623,6 @@ select_one()
 			;;
 		"uvc"|"video|webcam")
 			UVC=okay
-			;;
-		"uvch"|"videoh")
-			UVCH=okay
 			;;
 		uas*|uasp*)
 			UAS=okay
@@ -717,6 +681,112 @@ gstop()
 	gclean
 }
 
+gen_role_switch_list()
+{
+	ROLE_SWITCH_LIST=""
+	# Find those names with dwc3 in the dir: /sys/kernel/debug/usb
+	for dir in /sys/kernel/debug/usb/*; do
+		if [[ -d "$dir" && "$dir" == *"dwc3"* ]]; then
+			ROLE_SWITCH_LIST="$(basename "$dir") $ROLE_SWITCH_LIST"
+		fi
+	done
+	# Find role-switch location in dir: /sys/class/usb_role/xxx-role-switch/ with a role file existing
+	for role_switch in /sys/class/usb_role/*-role-switch/; do
+		if [[ -d "$role_switch" && -f "${role_switch}role" ]]; then
+			ROLE_SWITCH_LIST="$(basename "$role_switch") $ROLE_SWITCH_LIST"
+		fi
+	done
+}
+
+print_role_switch_info()
+{
+	gen_role_switch_list
+	echo -n "Available DRDs: "
+	echo "$ROLE_SWITCH_LIST"
+}
+
+# Function to set the role for a specific role switch
+set_role() {
+	if [ "$#" -lt 1 ]; then
+		echo "Usage: $name set_role <role_switch> [host|device]"
+		echo -e "\t$name set_role <role_switch>=[host|device]"
+		return 1
+	fi
+	local input="$*"
+	local role_switch
+	local role
+	# Use awk to parse the input
+	echo "$input" | awk -F'[ =]' '{
+		if (NF == 2) {
+			role_switch = $1;
+			role = $2;
+		} else if (NF == 1) {
+			role_switch = $1;
+			role = "NONE";  # Default role
+		} else if (NF >= 3) {
+			role_switch = $1;
+			role = $3;
+			sub(/=[^=]+$/, "", role_switch);  # Remove the =part from role_switch
+		}
+		print role_switch, role
+	}' | {
+		read role_switch role
+		if [[ "$role_switch" == *"-role-switch" ]]; then
+			# It's a role-switch, verify its existence
+			local role_switch_path="/sys/class/usb_role/$role_switch/role"
+			if [ ! -e "$role_switch_path" ]; then
+				gadget_info "Error: Role switch '$role_switch' does not exist."
+				return 1
+			fi
+			if [[ "$role" == "NONE" ]]; then
+				role=$(cat $role_switch_path)
+				gadget_info "Role for role switch '$role_switch' is currently '$role'."
+			else
+				echo "$role" > "$role_switch_path"
+				gadget_info "Role for'$role_switch' set to '$role'."
+			fi
+		else
+			# It's a controller type, verify its existence
+			local usb_controller_path="/sys/kernel/debug/usb/$role_switch/mode"
+			if [ ! -e "$usb_controller_path" ]; then
+				gadget_info "Error: controller support mode switch '$role_switch' does not exist."
+				return 1
+			fi
+			if [[ "$role" == "NONE" ]]; then
+				role=$(cat $usb_controller_path)
+				gadget_info "Mode for '$role_switch' is currently '$role'."
+			else
+				echo "$role" > "$usb_controller_path"
+				role_after="$(cat $usb_controller_path)"
+				if [[ "$role" != "$role_after" ]]; then
+					gadget_info "Error: controller '$role_switch' doesn't support mode switch!!!"
+					role="$(cat $usb_controller_path)"
+					gadget_info "Mode for Controller '$role_switch' is currently '$role'."
+				else
+					gadget_info "Mode for controller '$role_switch' set to '$role'."
+				fi
+			fi
+		fi
+		print_role_switch_info
+	}
+}
+
+print_info()
+{
+	echo "SpacemiT gadget-setup tool $SCRIPT_VERSION"
+	echo
+	echo "Board Model: `tr -d '\000' < /proc/device-tree/model`"
+	echo "Serial Number: $SERNUM_STR"
+	echo "General Config Info: $VENDOR_ID/$PRODUC_ID/$MANUAF_STR/$PRODUC_STR."
+	echo "Config File Path: $CONFIG_FILE"
+	echo "MSC Ramdisk Path (selected from tmpfs mounting point): $RAMDISK_PATH"
+	echo "UASP SCSI NAA: $NAA"
+	echo "UASP Target Dir: $USB_GDIR"
+	echo "Available UDCs: `ls  -1 /sys/class/udc/ |  tr '\n' ' '`"
+	print_role_switch_info
+	echo
+}
+
 ## MAIN
 case "$1" in
 	stop|clean)
@@ -748,7 +818,11 @@ case "$1" in
 	info)
 		print_info
 		;;
-	[a-z]*) 
+	set_role|role_switch|role|rolesw|mode|switch|dr_mode)
+		shift
+		set_role "$@"
+		;;
+	[a-z]*)
 		handle_select $1
 		gstart $2
 		;;
