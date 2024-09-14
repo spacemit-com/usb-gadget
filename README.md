@@ -1,16 +1,18 @@
 ## 编译
 
-导出交叉工具链到环境变量
+ 如果需要板子作为usb device提供uvc功能，则需以下编译步骤，否则无需编译。只需把scripts目录下的脚本拷贝到板子上，运行脚本配置相应功能即可。
+
+导出交叉工具链到环境变量，或者在Bianbu desktop上执行
 
 ```
 $ make
-//copy scripts/gadget-setup.sh and uvc-gadget-new to k1 board
+#产出uvc-gadget-new
 ```
 
 ## 配置脚本
 本仓库提供两个 usb gadget 配置脚本，分别是：
-1. 用于配置 uvc gadget 的 uvc-gadget-setup.sh 和
-2. 支持 adb、rndis、uvc、mass storage 的 gadget-setup.sh。
+1. 用于配置 uvc gadget 的 scripts/uvc-gadget-setup.sh
+2. 用于配置 adb、rndis、uvc、mass storage 的 scripts/gadget-setup.sh
 
 具体使用方法可以查看对应脚本 help 命令及参考本文档的后续章节。
 
@@ -22,7 +24,7 @@ gadget-setup.sh help
 
 
 ## UVC
-UVC配置可选用两种方法：
+板子做usb device，UVC配置可选用两种方法：
 
 1. 使用专用uvc脚本，支持更多uvc配置，独立USB PID（推荐）：
 ```
@@ -51,9 +53,9 @@ gadget-setup.sh rndis
 ![img_v3_02dr_d968d898-83fe-4f63-a236-1dade8dc0c4g](20240819-112732.jpg)
 
 ## ADB
-gadget-setup.sh 通用脚本集成了 ADB。
+gadget-setup.sh 通用脚本集成了 ADB功能。
 
-注：不能和系统集成的同时使用。
+注：Bianbu desktop/linux有默认集成adb功能，gadget-setup.sh不能和系统集成的同时使用。
 ```
 # 配置 adb
 gadget-setup.sh adb
@@ -62,13 +64,22 @@ gadget-setup.sh stop
 ```
 
 ## Mass Storage （BOT协议）
+
+先安装`sudo apt install dosfstools`
+
 ```
 gadget-setup.sh msc:<镜像或设备节点>
 # 举例
 gadget-setup.sh msc:/dev/nvme0n1
+
+#使用内存盘
+gadget-setup.sh msc
 ```
 
 ## Mass Storage （支持UASP协议）
+
+先安装`sudo apt install dosfstools`
+
 UASP协议提升了传输效率。
 ```
 gadget-setup.sh uas:<镜像或设备节点>
