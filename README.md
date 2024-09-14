@@ -83,10 +83,41 @@ gadget-setup.sh uas:/dev/nvme0n1
 gadget-setup.sh rndis,adb
 ```
 
+## 手动选择控制器
+由于当前硬件平台可能有多个支持device的usb控制器（udc），可以用以下命令查看可用的 udc：
+```
+~ # gadget-setup info
+SpacemiT gadget-setup tool v0.5-SUPPORTROLESW
+
+Board Model: spacemit k1-x MUSE-Pi board
+# ....
+Available UDCs: c0900100.udc c0980100.udc1 c0a00000.dwc3
+# ...
+
+# 或者直接适用：
+~ # ls /sys/class/udc/
+c0900100.udc   c0980100.udc1  c0a00000.dwc3
+```
+
+默认脚本选用 /sys/class/udc/ 目录下的第一个 udc。
+
+用户可以通过环境变量指定特定 udc，举例：
+
+```
+# 选择第二个 udc
+USB_UDC_IDX=2 gadget-setup.sh ...
+USB_UDC_IDX=2 uvc-gadget-setup.sh ...
+# 选择 c0a00000.dwc3
+USB_UDC=c0a00000.dwc3 gadget-setup.sh ...
+USB_UDC=c0a00000.dwc3 uvc-gadget-setup.sh ...
+```
+其中 ... 省略了脚本的其他参数。
+
 ## 手动切换控制器角色
 在usb控制器支持手动切换的方案中，可以通过以下命令来查看支持切换的控制器：
 ```
 gadget-setup.sh info
+
 ```
 通过以下命令来切换控制器角色 host 或 device：
 ```
