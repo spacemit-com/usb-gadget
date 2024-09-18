@@ -129,6 +129,11 @@ USB_UDC=c0a00000.dwc3 uvc-gadget-setup.sh ...
 ```
 gadget-setup.sh info
 
+Board Model: spacemit k1-x MUSE-Pi board
+# ....
+Available DRDs: mv-otg1-role-switch c0a00000.dwc3
+# ...
+
 ```
 通过以下命令来切换控制器角色 host 或 device：
 ```
