@@ -387,6 +387,8 @@ static void uvc_events_process(void *d)
 		return;
 
 	case UVC_EVENT_STREAMON:
+		/* stop first making sure buf are cleared if user disconnect during streaming */
+		uvc_stream_enable(dev->stream, 0);
 		uvc_stream_enable(dev->stream, 1);
 		return;
 
