@@ -757,6 +757,7 @@ set_role() {
 				gadget_info "Mode for '$role_switch' is currently '$role'."
 			else
 				echo "$role" > "$usb_controller_path"
+				sleep 1
 				role_after="$(cat $usb_controller_path)"
 				if [[ "$role" != "$role_after" ]]; then
 					gadget_info "Error: controller '$role_switch' doesn't support mode switch!!!"
