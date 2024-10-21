@@ -453,6 +453,22 @@ rndis_config()
 
 rndis_link()
 {
+
+	# Add Microsoft os descriptors to ensure
+	# Windows recognize us as an RNDIS compatible device
+	# thus no need to install driver manually.
+	# Verified on Windows 10.
+	echo 0xEF > $GADGET_PATH/bDeviceClass
+	echo 0x02 > $GADGET_PATH/bDeviceSubClass
+	echo 0x01 > $GADGET_PATH/bDeviceProtocol
+	echo 1 > $GADGET_PATH/os_desc/use
+	echo 0x1 > $GADGET_PATH/os_desc/b_vendor_code
+	echo "MSFT100" > $GADGET_PATH/os_desc/qw_sign
+	mkdir -p $GFUNC_PATH/rndis.0/os_desc/interface.rndis
+	echo RNDIS > $GFUNC_PATH/rndis.0/os_desc/interface.rndis/compatible_id
+	echo 5162001 > $GFUNC_PATH/rndis.0/os_desc/interface.rndis/sub_compatible_id
+	ln -s $GADGET_PATH/configs/c.1 $GADGET_PATH/os_desc/c.1
+
 	ln -s $GFUNC_PATH/rndis.0 $GCONFIG
 	HOST_ADDR=`cat $GFUNC_PATH/rndis.0/host_addr`
 	DEV_ADDR=`cat $GFUNC_PATH/rndis.0/dev_addr`
@@ -553,9 +569,10 @@ gconfig()
 	echo 0xc0 > $GCONFIG/bmAttributes
 	echo 500 > $GCONFIG/MaxPower
 	mkdir $GCONFIG/strings/0x409
+	# Windows rndis driver requires rndis to be the first interface
+	[ $RNDIS = okay ] && rndis_config
 	[ $MSC = okay ] &&  msc_config
 	[ $UAS = okay ] &&  uas_config
-	[ $RNDIS = okay ] && rndis_config
 	[ $ADB = okay ] &&  adb_config
 	[ $UVC = okay ] &&  uvc_config
 }
@@ -578,9 +595,9 @@ gclean()
 
 glink()
 {
+	[ $RNDIS  = okay ] && rndis_link
 	[ $MSC  = okay ] && msc_link
 	[ $UAS  = okay ] && uas_link
-	[ $RNDIS  = okay ] && rndis_link
 	[ $ADB  = okay ] && adb_link
 	[ $UVC  = okay ] && uvc_link
 }
@@ -588,9 +605,9 @@ glink()
 gunlink()
 {
 	[ -e $GADGET_PATH/UDC ] || die "gadget not configured yet"
+	rndis_unlink
 	msc_unlink
 	uas_unlink
-	rndis_unlink
 	adb_unlink
 	uvc_unlink
 	# Remove strings:
