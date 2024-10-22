@@ -1,0 +1,9 @@
+build
+src/*.o
+lib/*.o
+*.build
+*.bak
+*.a
+*.o
+*.so
+uvc-gadget-new
