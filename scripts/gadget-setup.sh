@@ -480,6 +480,7 @@ rndis_link()
 rndis_unlink()
 {
 	[ -e $GFUNC_PATH/rndis.0/ifname ] && ifconfig `cat $GFUNC_PATH/rndis.0/ifname` down
+	g_remove $GADGET_PATH/os_desc/c.1
 	g_remove $GCONFIG/rndis.0
 }
 
