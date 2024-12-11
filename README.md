@@ -50,6 +50,9 @@ gadget-setup.sh rndis
 
 ### PC端设置
 
+目前最新版脚本已经支持Linux、Windows10下自动识别RNDIS设备驱动，无需手动安装。  
+如果二次开发等其他需求需要手动安装驱动，请参考：
+
 ![img_v3_02dr_d968d898-83fe-4f63-a236-1dade8dc0c4g](20240819-112732.jpg)
 
 ## ADB
@@ -85,6 +88,9 @@ UASP协议提升了传输效率。
 gadget-setup.sh uas:<镜像或设备节点>
 # 举例
 gadget-setup.sh uas:/dev/nvme0n1
+
+#使用内存盘
+gadget-setup.sh uas
 ```
 
 
@@ -135,6 +141,8 @@ Available DRDs: mv-otg1-role-switch c0a00000.dwc3
 # ...
 
 ```
+对于支持切换的控制器对应到方案开发板的接口关系（如mv-otg-role-switch对应k1烧录口），请参考USB开发文档相关章节。
+
 通过以下命令来切换控制器角色 host 或 device：
 ```
 gadget-setup.sh role <控制器/otg名称> <device或者host>
