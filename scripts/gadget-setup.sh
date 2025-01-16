@@ -486,6 +486,7 @@ rndis_link()
 	IFNAME=`cat $GFUNC_PATH/rndis.0/ifname`
 	gadget_info "rndis function enabled, mac(h): $HOST_ADDR, mac(g): $DEV_ADDR, ifname: $IFNAME."
 	gadget_info "execute ifconfig $IFNAME up to enable rndis iface."
+	gadget_info "run $name dhcp to start dhcp server, assign IP to your PC(debug only)"
 }
 
 rndis_unlink()
@@ -530,6 +531,7 @@ ncm_link()
 	   IFNAME=`cat $GFUNC_PATH/ncm.0/ifname`
 	   gadget_info "ncm function enabled, mac(h): $HOST_ADDR, mac(g): $DEV_ADDR, ifname: $IFNAME."
 	   gadget_info "execute ifconfig $IFNAME up to enable ncm iface."
+	   gadget_info "run $name dhcp to start dhcp server, assign IP to PC(debug only)"
 }
 
 ncm_unlink()
@@ -881,8 +883,8 @@ config_dhcp()
 	   gadget_info "udhcpcd now running..."
 	   ps | grep udhcpd | grep -v grep
 	   gadget_info "Configure your usb host ncm interface to dhcp mode"
-	   gadget_info "The IP of USB host ncm iface: $MYIP"
-	   gadget_info "Our IP as router: $YOURIP"
+	   gadget_info "The IP of USB host ncm iface: $YOURIP"
+	   gadget_info "Our IP as router: $MYIP"
 }
 
 print_info()
