@@ -2,7 +2,7 @@
 # In busybox ash, should use /bin/sh, but bianbu cannot use /bin/sh
 
 name=`basename $0`
-SCRIPT_VERSION="v0.5-SUPPORTROLESW"
+SCRIPT_VERSION="v0.6-NCMDHCP"
 CONFIG_FILE=$HOME/.usb_config
 
 # USB Descriptors
@@ -21,6 +21,10 @@ GFUNC_PATH=$GADGET_PATH/functions
 GCONFIG=$GADGET_PATH/configs/c.1
 [ "$USB_UDC" ] || USB_UDC=$(ls /sys/class/udc | awk "NR==1{print}")
 
+# DHCP
+MYNETMASK="255.255.255.0"
+MYIP="192.168.36.101"
+YOURIP="192.168.36.102"
 # MSC Debug Ramdisk
 RAMDISK_PATH=/var/sdcard
 TMPFS_FOUND=`mount | grep tmpfs | grep -v devtmpfs | awk '{print $3}' | grep '/dev/shm' | wc -l`
@@ -40,6 +44,7 @@ MSC_ARG=""
 ADB=disabled
 UVC=disabled
 RNDIS=disabled
+NCM=disabled
 FUNCTION_CNT=0
 DEBUG=
 
@@ -66,6 +71,12 @@ usage()
 	echo -e "\tadb       Android Debug Bridge over USB."
 	echo -e "\tuvc                              Webcam."
 	echo -e "\trndis                RNDIS NIC function."
+	echo -e "\tncm                  NCM NIC function."
+	echo ""
+	echo -e "\tdhcp       config busybox.udhcpd for NIC"
+	echo -e "\t           func on usb0, NIC func need"
+	echo -e "\t           to be configured first!"
+	echo ""
 	echo -e "\nSpacemiT gadget-setup tool $SCRIPT_VERSION"
 	echo ""
 }
@@ -489,6 +500,50 @@ rndis_clean()
 	g_remove $GFUNC_PATH/rndis.0
 }
 
+## NCM
+
+ncm_config()
+{
+	   OVERRIDE_VENDOR_FOR_WINDOWS=$1
+	   # create function instance
+	   # functions/<f_function allowed>.<instance name>
+	   # f_function allowed: ncm
+	   mkdir -p $GFUNC_PATH/ncm.0
+}
+
+ncm_link()
+{
+	   echo 0xEF > $GADGET_PATH/bDeviceClass
+	   echo 0x02 > $GADGET_PATH/bDeviceSubClass
+	   echo 0x01 > $GADGET_PATH/bDeviceProtocol
+	   echo 1 > $GADGET_PATH/os_desc/use
+	   echo 0x1 > $GADGET_PATH/os_desc/b_vendor_code
+	   echo "MSFT100" > $GADGET_PATH/os_desc/qw_sign
+	   mkdir -p $GFUNC_PATH/ncm.0/os_desc/interface.ncm
+	   echo WINNCM > $GFUNC_PATH/ncm.0/os_desc/interface.ncm/compatible_id
+	   # echo 5162001 > $GFUNC_PATH/ncm.0/os_desc/interface.ncm/sub_compatible_id
+	   echo 10 > $GFUNC_PATH/ncm.0/qmult
+	   ln -s $GADGET_PATH/configs/c.1 $GADGET_PATH/os_desc/c.1
+	   ln -s $GFUNC_PATH/ncm.0 $GCONFIG
+	   HOST_ADDR=`cat $GFUNC_PATH/ncm.0/host_addr`
+	   DEV_ADDR=`cat $GFUNC_PATH/ncm.0/dev_addr`
+	   IFNAME=`cat $GFUNC_PATH/ncm.0/ifname`
+	   gadget_info "ncm function enabled, mac(h): $HOST_ADDR, mac(g): $DEV_ADDR, ifname: $IFNAME."
+	   gadget_info "execute ifconfig $IFNAME up to enable ncm iface."
+}
+
+ncm_unlink()
+{
+	   [ -e $GFUNC_PATH/ncm.0/ifname ] && ifconfig `cat $GFUNC_PATH/ncm.0/ifname` down
+	   g_remove $GADGET_PATH/os_desc/c.1
+	   g_remove $GCONFIG/ncm.0
+}
+
+ncm_clean()
+{
+	   g_remove $GFUNC_PATH/ncm.0
+}
+
 ## MTP
 
 mtp_config()
@@ -572,6 +627,7 @@ gconfig()
 	mkdir $GCONFIG/strings/0x409
 	# Windows rndis driver requires rndis to be the first interface
 	[ $RNDIS = okay ] && rndis_config
+	[ $NCM = okay ] && ncm_config
 	[ $MSC = okay ] &&  msc_config
 	[ $UAS = okay ] &&  uas_config
 	[ $ADB = okay ] &&  adb_config
@@ -584,6 +640,7 @@ gclean()
 	msc_clean
 	uas_clean
 	rndis_clean
+	ncm_clean
 	adb_clean
 	uvc_clean
 	# Remove string in gadget
@@ -597,6 +654,7 @@ gclean()
 glink()
 {
 	[ $RNDIS  = okay ] && rndis_link
+	[ $NCM  = okay ] && ncm_link
 	[ $MSC  = okay ] && msc_link
 	[ $UAS  = okay ] && uas_link
 	[ $ADB  = okay ] && adb_link
@@ -607,6 +665,7 @@ gunlink()
 {
 	[ -e $GADGET_PATH/UDC ] || die "gadget not configured yet"
 	rndis_unlink
+	ncm_unlink
 	msc_unlink
 	uas_unlink
 	adb_unlink
@@ -649,6 +708,9 @@ select_one()
 		"rndis"|"network"|"net"|"if")
 			RNDIS=okay
 			;;
+		"ncm"|"cdc_ncm")
+			NCM=okay
+			;;
 		"mtp")
 			MTP=okay
 			;;
@@ -690,6 +752,10 @@ gstart()
 	glink
 	[ $FUNCTION_CNT -lt 1 ] && die "No function selected, will not pullup."
 	echo_udc $1
+	## improve u_ether(rndis/ncm) performance
+	# echo "now enable usb0 rps, set rps_cpus to:"
+	# echo 70 > /sys/class/net/usb0/queues/rx-0/rps_cpus
+	# cat /sys/class/net/usb0/queues/rx-0/rps_cpus
 }
 
 gstop()
@@ -790,6 +856,32 @@ set_role() {
 	}
 }
 
+config_dhcp()
+{
+	   rm -f /var/lib/misc/udhcpd.leases
+	   gadget_info "old lease file destroyed (/var/lib/misc/udhcpd.leases)"
+	   gadget_info "overriding /etc/udhcpd.conf..."
+	   echo "start  $YOURIP" > /etc/udhcpd.conf
+	   echo "end   $YOURIP" >> /etc/udhcpd.conf
+	   echo "interface   usb0" >> /etc/udhcpd.conf
+	   echo "max_leases  1" >> /etc/udhcpd.conf
+	   echo "pidfile /var/run/udhcpd.pid" >> /etc/udhcpd.conf
+	   echo "lease_file  /var/lib/misc/udhcpd.leases" >> /etc/udhcpd.conf
+	   echo "opt  router  $MYIP" >> /etc/udhcpd.conf
+	   echo "option  subnet  $MYNETMASK" >> /etc/udhcpd.conf
+	   echo "option  domain  local" >>  /etc/udhcpd.conf
+	   echo "option  lease   864000" >> /etc/udhcpd.conf
+	   ifconfig usb0 down
+	   ifconfig usb0 $MYIP netmask $MYNETMASK up
+	   sleep 1
+	   busybox udhcpd /etc/udhcpd.conf
+	   gadget_info "udhcpcd now running..."
+	   ps | grep udhcpd | grep -v grep
+	   gadget_info "Configure your usb host ncm interface to dhcp mode"
+	   gadget_info "The IP of USB host ncm iface: $MYIP"
+	   gadget_info "Our IP as router: $YOURIP"
+}
+
 print_info()
 {
 	echo "SpacemiT gadget-setup tool $SCRIPT_VERSION"
@@ -840,6 +932,9 @@ case "$1" in
 	set_role|role_switch|role|rolesw|mode|switch|dr_mode)
 		shift
 		set_role "$@"
+		;;
+	dhcp)
+		config_dhcp
 		;;
 	[a-z]*)
 		handle_select $1
