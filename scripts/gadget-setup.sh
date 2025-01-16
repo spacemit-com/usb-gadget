@@ -611,6 +611,9 @@ echo_udc()
 
 gconfig()
 {
+	# Override PID for function need driver install, windows sometimes cache vid/pid
+	[ $RNDIS = okay ] && PRODUC_ID=0x0020
+	[ $NCM = okay ] && PRODUC_ID=0x0019
 	gadget_info "config $VENDOR_ID/$PRODUC_ID/$SERNUM_STR/$MANUAF_STR/$PRODUC_STR."
 	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
 	[ -e $GADGET_PATH ] && die "ERROR: gadget already configured, should run stop first"
