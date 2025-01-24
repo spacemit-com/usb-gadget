@@ -48,12 +48,36 @@ $ uvc-gadget-new
 gadget-setup.sh rndis
 ```
 
+另外最新脚本增加快捷运行 dhcp 服务器功能，依赖 busybox udhcpd，只需要执行
+
+```
+gadget-setup.sh dhcp
+```
+
+就会自动为网卡配置ip地址，并且支持给PC通过DHCP协议分配IP地址，具体请查看脚本实现。
+
 ### PC端设置
 
 目前最新版脚本已经支持Linux、Windows10下自动识别RNDIS设备驱动，无需手动安装。  
 如果二次开发等其他需求需要手动安装驱动，请参考：
 
 ![img_v3_02dr_d968d898-83fe-4f63-a236-1dade8dc0c4g](20240819-112732.jpg)
+
+## NCM
+
+不同于RNDIS由微软维护，NCM是USB-IF维护网络协议，主流操作系统（Linux,Windows 11,macOS等）具备支持。
+注：目前Windows 10的ncm驱动实现和Linux 6.6中ncm gadget兼容性不是最佳，微软在Windows 11才进行修复。
+```
+gadget-setup.sh ncm
+```
+
+另外最新脚本增加快捷运行 dhcp 服务器功能，依赖 busybox udhcpd，只需要执行
+
+```
+gadget-setup.sh dhcp
+```
+
+就会自动为网卡配置ip地址，并且支持给PC通过DHCP协议分配IP地址，具体请查看脚本实现。
 
 ## ADB
 gadget-setup.sh 通用脚本集成了 ADB功能。
