@@ -101,7 +101,7 @@ gadget-setup.sh dhcp
 
 就会自动为网卡配置ip地址，并且支持给PC通过DHCP协议分配IP地址，具体请查看脚本实现。
 
-对于需要使开发板共享Windows的，参考RNDIS章节的 "Windows共享互联网给开发板" 内容。
+对于需要使开发板共享Windows的，参考RNDIS章节的 "Windows共享互联网给开发板" 内容，但是第一步命令要改成 ncm 而不是 rndis。
 
 ## ADB
 gadget-setup.sh 通用脚本集成了 ADB功能。
