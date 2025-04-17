@@ -23,8 +23,9 @@ GCONFIG=$GADGET_PATH/configs/c.1
 
 # DHCP
 MYNETMASK="255.255.255.0"
-MYIP="192.168.36.101"
-YOURIP="192.168.36.102"
+[ "$SUBNET" ] ||  SUBNET="36"
+MYIP="192.168.$SUBNET.101"
+YOURIP="192.168.$SUBNET.102"
 # MSC Debug Ramdisk
 RAMDISK_PATH=/var/sdcard
 TMPFS_FOUND=`mount | grep tmpfs | grep -v devtmpfs | awk '{print $3}' | grep '/dev/shm' | wc -l`

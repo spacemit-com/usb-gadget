@@ -56,7 +56,29 @@ gadget-setup.sh dhcp
 
 就会自动为网卡配置ip地址，并且支持给PC通过DHCP协议分配IP地址，具体请查看脚本实现。
 
-### PC端设置
+### PC共享互联网给开发板
+本节内容为，对于无直接网络环境只有RNDIS USB Gadget连接的开发板，
+把Windows访问互联网的能力共享给开发板，使得开发板访问互联网。
+
+1. 执行命令：
+    ```bash
+    gadget-setup rndis
+    ```
+2. 打开Windows网络与共享中心
+3. 打开共享网络配置选择一个连接了外网的网络，如WIFI、有线网络
+4. 右键点击属性，
+5. 点击共享，然后勾选允许其他网络用户通过此计算机的Internet连接来连接。
+6. 在选择家庭网络连接列表中选择为你的RNDIS设备（图中以太网5是你的USB开发板RNDIS设备,以太网14是你的WIFI/有线网）：
+![share](rndis_share.png)
+7. 点击确定。
+8. 开发板执行 udhcpc -i usb0 获取Windows为其分配的IP地址。
+
+Windows还可以基于网桥，请参考相关Windows官方手册。
+
+对于Linux PC，各图形界面不一致这里不介绍，但是网络配置非常灵活，可参考Linux相关网络命令工具配置教程。
+
+
+### PC端驱动配置
 
 目前最新版脚本已经支持Linux、Windows10下自动识别RNDIS设备驱动，无需手动安装。  
 如果二次开发等其他需求需要手动安装驱动，请参考：
@@ -78,6 +100,8 @@ gadget-setup.sh dhcp
 ```
 
 就会自动为网卡配置ip地址，并且支持给PC通过DHCP协议分配IP地址，具体请查看脚本实现。
+
+对于需要使开发板共享Windows的，参考RNDIS章节的 "Windows共享互联网给开发板" 内容，但是第一步命令要改成 ncm 而不是 rndis。
 
 ## ADB
 gadget-setup.sh 通用脚本集成了 ADB功能。
