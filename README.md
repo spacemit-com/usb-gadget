@@ -169,7 +169,8 @@ gadget-setup.sh hid
 
 除此之外最简单是测试IO方法可以使用python和cat/hexdump工具（不完整处理和解析HID report格式）：
 
-1. 开发板linux系统下执行收文件命令，是打开open一个字符节点read，举例，用cat不断读取：
+1. 这里以PC发，Device收举例，开发板linux系统下是打开open一个字符节点read，Shell中我们这里演示用cat不断读取，
+通过hexdump解析数据打印出来：
 ```
 cat /dev/hidg0 | hexdump -C
 ```
