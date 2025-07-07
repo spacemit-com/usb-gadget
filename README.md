@@ -161,11 +161,14 @@ HID 是人体工学设备，通常用于模拟键盘鼠标。
 gadget-setup.sh hid
 ```
 
-需要注意 report 格式，在脚本中的REPORT_DESC定义，你可以通过全局搜索找到他，并且做修改。
+脚本中值得注意的有 report 格式，在脚本中的REPORT_DESC定义，你可以通过全局搜索找到他，并且做修改。
 
 具体的report格式配置需要熟读HID协议，更多详细内容可以参考相关的内核文档、规范文档。
 
-**模拟键盘鼠标**场景的细节可以参考[这个内核文档](https://www.kernel.org/doc/html/latest/usb/gadget_hid.html)。不过要注意的是这个文档第一步讲解的是传统的基于g_hid做的，我们目前用的是configfs的配置方法（从Configuration with configfs章节开始），你可以参考第一步其中的 report_desc。
+执行脚本后，gadget端会生成 /dev/hidg0 节点。后续你通过这个节点和上位机进行通信，比如你要发送鼠标键盘模拟数据，
+就要往这个设备节点写入数据，写入的数据格式遵守HID report_desc。
+
+**模拟键盘鼠标**场景的细节可以参考[这个内核文档](https://www.kernel.org/doc/html/latest/usb/gadget_hid.html)。不过要注意的是这个文档第一步讲解的是传统的基于g_hid做的，我们目前用的是configfs的配置方法（从Configuration with configfs章节开始），你可以参考第一步其中的 report_desc。文档中实现了一个上报数据的app是hid_gadget_test，在gadget端运行他，然后输入相关内容，gadget就会给上位机报告你所需要上报的键盘鼠标输入数据了。
 
 除此之外最简单是测试IO方法可以使用python和cat/hexdump工具（不完整处理和解析HID report格式）：
 
