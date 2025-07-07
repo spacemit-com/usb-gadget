@@ -165,7 +165,7 @@ gadget-setup.sh hid
 
 具体的report格式配置需要熟读HID协议，更多详细内容可以参考相关的内核文档、规范文档。
 
-**模拟键盘鼠标**场景的细节可以参考[这个内核文档](https://www.kernel.org/doc/html/latest/usb/gadget_hid.html)。
+**模拟键盘鼠标**场景的细节可以参考[这个内核文档](https://www.kernel.org/doc/html/latest/usb/gadget_hid.html)。不过要注意的是这个文档第一步讲解的是传统的基于g_hid做的，我们目前用的是configfs的配置方法（从Configuration with configfs章节开始），你可以参考第一步其中的 report_desc。
 
 除此之外最简单是测试IO方法可以使用python和cat/hexdump工具（不完整处理和解析HID report格式）：
 
