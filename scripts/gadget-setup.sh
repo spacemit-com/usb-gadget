@@ -2,7 +2,7 @@
 # In busybox ash, should use /bin/sh, but bianbu cannot use /bin/sh
 
 name=`basename $0`
-SCRIPT_VERSION="v0.6-NCMDHCP"
+SCRIPT_VERSION="v0.7+ACM/HID"
 CONFIG_FILE=$HOME/.usb_config
 
 # USB Descriptors
@@ -46,6 +46,8 @@ ADB=disabled
 UVC=disabled
 RNDIS=disabled
 NCM=disabled
+HID=0
+ACM=0
 FUNCTION_CNT=0
 DEBUG=
 
@@ -71,6 +73,8 @@ usage()
 	echo -e "\tuas(:dev/file)       Mass Storage(UASP)."
 	echo -e "\tadb       Android Debug Bridge over USB."
 	echo -e "\tuvc                              Webcam."
+	echo -e "\thid                    HID(vendor desc)."
+	echo -e "\tacm            Serial Port(/dev/ttyGS*)."
 	echo -e "\trndis                RNDIS NIC function."
 	echo -e "\tncm                  NCM NIC function."
 	echo ""
@@ -480,7 +484,7 @@ rndis_link()
 	echo RNDIS > $GFUNC_PATH/rndis.0/os_desc/interface.rndis/compatible_id
 	echo 5162001 > $GFUNC_PATH/rndis.0/os_desc/interface.rndis/sub_compatible_id
 	ln -s $GADGET_PATH/configs/c.1 $GADGET_PATH/os_desc/c.1
-
+	echo 10 > $GFUNC_PATH/rndis.0/qmult
 	ln -s $GFUNC_PATH/rndis.0 $GCONFIG
 	HOST_ADDR=`cat $GFUNC_PATH/rndis.0/host_addr`
 	DEV_ADDR=`cat $GFUNC_PATH/rndis.0/dev_addr`
@@ -545,6 +549,55 @@ ncm_unlink()
 ncm_clean()
 {
 	   g_remove $GFUNC_PATH/ncm.0
+}
+
+## HID
+
+hid_config()
+{
+	mkdir -p $GFUNC_PATH/hid.0
+	echo 0 > $GFUNC_PATH/hid.0/protocol    # 无协议
+	echo 0 > $GFUNC_PATH/hid.0/subclass    # 无子类
+	echo 64 > $GFUNC_PATH/hid.0/report_length  # 报告长度为64字节，理论支持 min 64，max 65536，
+	REPORT_DESC=$'\\x06\\xFF\\x00\\x09\\x01\\xA1\\x01\\x09\\x01\\x15\\x00\\x26\\xFF\\x00\\x75\\x08\\x95\\x40\\x81\\x02\\x09\\x02\\x15\\x00\\x26\\xFF\\x00\\x75\\x08\\x95\\x40\\x91\\x02\\xC0'
+	echo -ne $REPORT_DESC > $GFUNC_PATH/hid.0/report_desc
+}
+
+hid_link()
+{
+	ln -s $GFUNC_PATH/hid.0 $GCONFIG
+}
+
+hid_unlink()
+{
+	g_remove $GCONFIG/hid.0
+}
+
+hid_clean()
+{
+	g_remove $GFUNC_PATH/hid.0
+}
+
+## ACM
+
+acm_config()
+{
+	mkdir -p $GFUNC_PATH/acm.0
+}
+
+acm_link()
+{
+	ln -s functions/acm.0   configs/c.1/
+}
+
+acm_unlink()
+{
+	g_remove $GCONFIG/acm.0
+}
+
+acm_clean()
+{
+	g_remove $GFUNC_PATH/acm.0
 }
 
 ## MTP
@@ -637,7 +690,9 @@ gconfig()
 	[ $MSC = okay ] &&  msc_config
 	[ $UAS = okay ] &&  uas_config
 	[ $ADB = okay ] &&  adb_config
-	[ $UVC = okay ] &&  uvc_config
+	[ $UVC = okay ] &&  uvcg_config
+	[ $HID = okay ] &&  hid_config
+	[ $HID = okay ] &&  acm_config
 }
 
 gclean()
@@ -649,6 +704,8 @@ gclean()
 	ncm_clean
 	adb_clean
 	uvc_clean
+	hid_clean
+	acm_clean
 	# Remove string in gadget
 	gadget_info "remove strings of $GADGET_PATH."
 	g_remove $GADGET_PATH/strings/0x409
@@ -665,6 +722,8 @@ glink()
 	[ $UAS  = okay ] && uas_link
 	[ $ADB  = okay ] && adb_link
 	[ $UVC  = okay ] && uvc_link
+	[ $HID  = okay ] && hid_link
+	[ $ACM  = okay ] && hid_link
 }
 
 gunlink()
@@ -676,6 +735,8 @@ gunlink()
 	uas_unlink
 	adb_unlink
 	uvc_unlink
+	hid_unlink
+	acm_unlink
 	# Remove strings:
 	gadget_info "remove strings of c.1."
 	g_remove $GCONFIG/strings/0x409
@@ -722,6 +783,12 @@ select_one()
 			;;
 		"adb"|"fastboot"|"adbd")
 			ADB=okay
+			;;
+		"hid")
+			HID=okay
+			;;
+		"acm"|"serial"|"com")
+			ACM=okay
 			;;
 		*)
 			die "not supported function: $func"
