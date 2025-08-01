@@ -22,6 +22,8 @@ uvc-gadget-setup.sh help
 gadget-setup.sh help
 ```
 
+更多内容参阅内核官方测试文档: [Gadget Testing | kernel.org](https://www.kernel.org/doc/html/latest/usb/gadget-testing.html)
+
 
 ## UVC
 板子做usb device，UVC配置可选用两种方法：
@@ -80,8 +82,8 @@ Windows还可以基于网桥，请参考相关Windows官方手册。
 
 ### PC端驱动配置
 
-目前最新版脚本已经支持Linux、Windows10下自动识别RNDIS设备驱动，无需手动安装。  
-如果二次开发等其他需求需要手动安装驱动，请参考：
+目前最新版脚本**已经支持**Linux、Windows10下自动识别RNDIS设备驱动，**一般无需手动安装**。  
+如果你要二次开发脚本等其他需求时需要手动安装驱动，请参考下图：
 
 ![img_v3_02dr_d968d898-83fe-4f63-a236-1dade8dc0c4g](20240819-112732.jpg)
 
@@ -141,6 +143,83 @@ gadget-setup.sh uas:/dev/nvme0n1
 gadget-setup.sh uas
 ```
 
+## ACM
+ACM 是串口。使用也非常简单，运行gadget脚本拉起串口gadget后，gadget board这边的Linux中会
+
+```bash
+gadget-setup.sh acm
+```
+
+在/dev下生成 ttyGS* 块设备节点，通常是 /dev/ttyGS0。
+
+随后连接到PC等上位机后，就可以正常的串口通信，你把数据写入 /dev/ttyGS0，PC就能从中读到数据。
+
+## HID
+HID 是人体工学设备，通常用于模拟键盘鼠标。
+
+```bash
+gadget-setup.sh hid
+```
+
+脚本中值得注意的有 report 格式，在脚本中的REPORT_DESC定义，你可以通过全局搜索找到他，并且做修改。
+
+具体的report格式配置需要熟读HID协议，更多详细内容可以参考相关的内核文档、规范文档。
+
+执行脚本后，gadget端会生成 /dev/hidg0 节点。后续你通过这个节点和上位机进行通信，比如你要发送鼠标键盘模拟数据，
+就要往这个设备节点写入数据，写入的数据格式遵守HID report_desc。
+
+**模拟键盘鼠标**场景的细节可以参考[这个内核文档](https://www.kernel.org/doc/html/latest/usb/gadget_hid.html)。不过要注意的是这个文档第一步讲解的是传统的基于g_hid做的，我们目前用的是configfs的配置方法（从Configuration with configfs章节开始），你可以参考第一步其中的 report_desc。文档中实现了一个上报数据的app是hid_gadget_test，在gadget端运行他，然后输入相关内容，gadget就会给上位机报告你所需要上报的键盘鼠标输入数据了。
+
+除此之外最简单是测试IO方法可以使用python和cat/hexdump工具（不完整处理和解析HID report格式）：
+
+1. 这里以PC发，Device收举例，开发板linux系统下是打开open一个字符节点read，Shell中我们这里演示用cat不断读取，
+通过hexdump解析数据打印出来：
+```
+cat /dev/hidg0 | hexdump -C
+```
+
+3. Windows PC 采用python免驱发送helloworld：python先安装依赖
+
+```bash
+pip install hidapi  # Windows/Linux通用
+```
+
+4. PC 使用python通过HID协议向设备发送hello world：
+```python
+import hid
+
+"""
+注意这段代码是在PC运行的
+"""
+# 查找自定义 HID 设备
+device = hid.device()
+
+# 根据厂商ID和产品ID打开设备
+vendor_id = 0x361c  # SpacemiT
+product_id = 0x0007  # 产品ID
+device.open(vendor_id, product_id)
+
+# 设置非阻塞模式（可选）
+device.set_nonblocking(1)
+
+# 准备数据（开头需要添加报告ID，通常为0x00）
+message = b"\x00" + b"hello world".ljust(63, b"\x00")  # 总长度64字节
+
+# 发送数据
+device.write(message)
+print("已发送: hello world")
+
+# 接收响应（如果有）
+data = device.read(64)
+if data:
+    print(f"收到响应: {bytes(data[1:]).decode('ascii').strip()}")  # 跳过报告ID
+
+# 关闭设备
+device.close()
+```
+
+PC脚本执行后，实测图片截图如下(gadget端):
+![hid-gside](hid-gside.jpg)
 
 ## 复合设备
 举例：rndis + adb：
