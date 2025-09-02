@@ -29,6 +29,8 @@ dev.set_configuration()
 cfg = dev.get_active_configuration()
 intf = cfg[(0, 0)]
 
+# TODO: If you use gadget-setup to configure a composite device, 
+# you may need to change the interface number.
 # Assume first OUT and first IN endpoint
 ep_out = usb.util.find_descriptor(
     intf,
