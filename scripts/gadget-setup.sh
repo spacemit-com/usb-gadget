@@ -46,12 +46,34 @@ ADB=disabled
 MTP=disabled
 FFS=disabled
 UVC=disabled
+UAC=disabled
 RNDIS=disabled
 NCM=disabled
 HID=0
 ACM=0
 FUNCTION_CNT=0
 DEBUG=
+
+
+# UAC Params
+# Playback
+UAC_VERSION="uac1"
+UAC_P_CHMASK=3
+UAC_P_SSIZE=2
+UAC_P_STATE="8000,16000,44100,48000"
+UAC_P_VOL_MIN="-64.0"
+UAC_P_VOL_MAX="64.0"
+UAC_P_VOL_RES=1
+UAC_P_VOL_CUR=0
+
+# Capture
+UAC_C_CHMASK=3
+UAC_C_SSIZE=2
+UAC_C_STATE="8000,16000,44100,48000"
+UAC_C_VOL_MIN="-64.0"
+UAC_C_VOL_MAX="0"
+UAC_C_VOL_RES=1
+UAC_C_VOL_CUR=0
 
 usage()
 {
@@ -74,8 +96,10 @@ usage()
 	echo -e "\tmsc(:dev/file)             Mass Storage(Bulk-Only)."
 	echo -e "\tuas(:dev/file)                  Mass Storage(UASP)."
 	echo -e "\tadb                  Android Debug Bridge over USB."
-	echo -e "\tmtp(:directory)             Media Transfer Protocol."
-	echo -e "\tuvc                                     UVC Webcam."
+	echo -e "\tmtp(:directory)            Media Transfer Protocol."
+	echo -e "\tuvc                                     USB Webcam."
+	echo -e "\tuac/uac1                            USB Audio v1.0."
+	echo -e "\tuac2                                USB Audio v1.0."
 	echo -e "\thid                               HID(vendor desc)."
 	echo -e "\tacm                       Serial Port(/dev/ttyGS*)."
 	echo -e "\trndis                           RNDIS NIC function."
@@ -257,16 +281,18 @@ uas_clean()
 adb_config()
 {
 	gadget_debug "add a adb function instance"
-	mkdir $GFUNC_PATH/ffs.adb
+	# use the name cabd means composite adb, 
+	# to avoid confict with system built-in adb function instance
+	mkdir $GFUNC_PATH/ffs.cadb
 }
 
 adb_link()
 {
 	gadget_debug "add adb to usb config"
-	ln -s $GFUNC_PATH/ffs.adb/ $GCONFIG/ffs.adb
+	ln -s $GFUNC_PATH/ffs.cadb/ $GCONFIG/ffs.cadb
 	mkdir /dev/usb-ffs
 	mkdir /dev/usb-ffs/adb
-	mount -o uid=2000,gid=2000 -t functionfs adb /dev/usb-ffs/adb/
+	mount -o uid=2000,gid=2000 -t functionfs cadb /dev/usb-ffs/adb/
 	#mkdir /dev/pts
 	#mount -t devpts -o defaults,mode=644,ptmxmode=666 devpts /dev/pts
 	adbd &
@@ -277,7 +303,7 @@ adb_unlink()
 {
 	gadget_debug "remove adb from usb config"
 	killall adbd
-	g_remove $GCONFIG/ffs.adb
+	g_remove $GCONFIG/ffs.cadb
 	[ -e /dev/usb-ffs/adb/ ] && umount /dev/usb-ffs/adb/
 	#[ -e /dev/pts ] && umount /dev/pts
 	#g_remove /dev/pts
@@ -288,7 +314,7 @@ adb_unlink()
 adb_clean()
 {
 	gadget_debug "clean adb"
-	g_remove $GFUNC_PATH/ffs.adb
+	g_remove $GFUNC_PATH/ffs.cadb
 }
 
 ## FFS
@@ -494,6 +520,60 @@ uvc_clean()
 	UVC_INSTANCE=uvc.0
 	destroy_uvc_
 }
+
+## UAC
+
+db_convert_() {
+    raw=$(echo "$1 256" | awk '{printf "%.0f", $1 * $2}')
+    [ "$raw" -gt 32767 ] && raw=32767
+    [ "$raw" -lt -32767 ] && raw=-32767
+    echo "$raw"
+}
+
+uac_config() {
+    gadget_info "[uac] setup $UAC_VERSION"
+
+    UAC_FUNC=$GFUNC_PATH/${UAC_VERSION}.0
+    mkdir -p "$UAC_FUNC"
+
+    # playback params
+    echo "$UAC_P_CHMASK" > "$UAC_FUNC/p_chmask"
+    echo "$UAC_P_SSIZE" > "$UAC_FUNC/p_ssize"
+    echo "$UAC_P_STATE" > "$UAC_FUNC/p_srate"
+    echo "$(db_convert_ "$UAC_P_VOL_MIN")" > "$UAC_FUNC/p_volume_min"
+    echo "$(db_convert_ "$UAC_P_VOL_MAX")" > "$UAC_FUNC/p_volume_max"
+    echo "$UAC_P_VOL_RES" > "$UAC_FUNC/p_volume_res"
+    echo "$(db_convert_ "$UAC_P_VOL_CUR")" > "$UAC_FUNC/p_volume_present"
+
+    # capture params
+    echo "$UAC_C_CHMASK" > "$UAC_FUNC/c_chmask"
+    echo "$UAC_C_SSIZE" > "$UAC_FUNC/c_ssize"
+    echo "$UAC_C_STATE" > "$UAC_FUNC/c_srate"
+    echo "$(db_convert_ "$UAC_C_VOL_MIN")" > "$UAC_FUNC/c_volume_min"
+    echo "$(db_convert_ "$UAC_C_VOL_MAX")" > "$UAC_FUNC/c_volume_max"
+    echo "$UAC_C_VOL_RES" > "$UAC_FUNC/c_volume_res"
+    echo "$(db_convert_ "$UAC_C_VOL_CUR")" > "$UAC_FUNC/c_volume_present"
+}
+
+uac_link() {
+    gadget_info "[uac] linking $UAC_VERSION"
+    ln -s $GFUNC_PATH/${UAC_VERSION}.0 $GCONFIG/${UAC_VERSION}.0
+	gadget_info "UAC useful commands:"
+	gadget_info "    aplay -l"
+	gadget_info "    aplay test.wav -f dat -D hw:2,0"
+	gadget_info "    arecord -f dat -D hw:2,0 | aplay -f dat -D hw:0,0"
+}
+
+uac_unlink() {
+    gadget_info "[uac] unlinking $UAC_VERSION"
+    g_remove $GCONFIG/${UAC_VERSION}.0
+}
+
+uac_clean() {
+    gadget_info "[uac] cleaning $UAC_VERSION"
+    g_remove $GFUNC_PATH/${UAC_VERSION}.0
+}
+
 
 ## RNDIS
 
@@ -740,6 +820,7 @@ gconfig()
 	[ $ADB = okay ] &&  adb_config
 	[ $MTP = okay ] &&  mtp_config
 	[ $UVC = okay ] &&  uvc_config
+	[ $UAC = okay ] &&  uac_config
 	[ $NCM = okay ] &&  ncm_config
 	[ $HID = okay ] &&  hid_config
 	[ $HID = okay ] &&  acm_config
@@ -756,6 +837,10 @@ gclean()
 	mtp_clean
 	ffsdemo_clean
 	uvc_clean
+	UAC_VERSION=uac1
+	uac_clean
+	UAC_VERSION=uac2
+	uac_clean
 	hid_clean
 	acm_clean
 
@@ -777,6 +862,7 @@ glink()
 	[ $MTP  = okay ] && mtp_link
 	[ $FFS  = okay ] && ffsdemo_link
 	[ $UVC  = okay ] && uvc_link
+	[ $UAC  = okay ] && uac_link
 	[ $HID  = okay ] && hid_link
 	[ $ACM  = okay ] && hid_link
 }
@@ -792,6 +878,10 @@ gunlink()
 	mtp_unlink
 	ffsdemo_unlink
 	uvc_unlink
+	UAC_VERSION=uac1
+	uac_unlink
+	UAC_VERSION=uac2
+	uac_unlink
 	hid_unlink
 	acm_unlink
 	# Remove strings:
@@ -825,6 +915,14 @@ select_one()
 			;;
 		"uvc"|"video|webcam")
 			UVC=okay
+			;;
+		"uac"|"uac1")
+			UAC_VERSION=uac1
+			UAC=okay
+			;;
+		"uac2")
+			UAC_VERSION=uac2
+			UAC=okay
 			;;
 		uas*|uasp*)
 			UAS=okay
@@ -897,6 +995,9 @@ gstart()
 
 gstop()
 {
+	if [ "$#" -gt 0 ]; then
+		GADGET_PATH="/sys/kernel/config/usb_gadget/$1"
+	fi
 	no_udc
 	gunlink
 	gclean
@@ -1038,7 +1139,7 @@ print_info()
 ## MAIN
 case "$1" in
 	stop|clean)
-		gstop
+		gstop $2
 		;;
 	restart|reload)
 		gstop
