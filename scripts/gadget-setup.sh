@@ -2,7 +2,7 @@
 # In busybox ash, should use /bin/sh, but bianbu cannot use /bin/sh
 
 name=`basename $0`
-SCRIPT_VERSION="v0.7+ACM/HID"
+SCRIPT_VERSION="v0.8/FFS/MTP"
 CONFIG_FILE=$HOME/.usb_config
 
 # USB Descriptors
@@ -43,13 +43,37 @@ UAS=disabled
 UAS_ARG=""
 MSC_ARG=""
 ADB=disabled
+MTP=disabled
+FFS=disabled
 UVC=disabled
+UAC=disabled
 RNDIS=disabled
 NCM=disabled
 HID=0
 ACM=0
 FUNCTION_CNT=0
 DEBUG=
+
+
+# UAC Params
+# Playback
+UAC_VERSION="uac1"
+UAC_P_CHMASK=3
+UAC_P_SSIZE=2
+UAC_P_STATE="8000,16000,44100,48000"
+UAC_P_VOL_MIN="-64.0"
+UAC_P_VOL_MAX="64.0"
+UAC_P_VOL_RES=1
+UAC_P_VOL_CUR=0
+
+# Capture
+UAC_C_CHMASK=3
+UAC_C_SSIZE=2
+UAC_C_STATE="8000,16000,44100,48000"
+UAC_C_VOL_MIN="-64.0"
+UAC_C_VOL_MAX="0"
+UAC_C_VOL_RES=1
+UAC_C_VOL_CUR=0
 
 usage()
 {
@@ -69,18 +93,21 @@ usage()
 	echo -e "\t$name role <rolesw-name> [host|device]"
 	echo ""
 	echo "Functions and arguments supported:"
-	echo -e "\tmsc(:dev/file)  Mass Storage(Bulk-Only)."
-	echo -e "\tuas(:dev/file)       Mass Storage(UASP)."
-	echo -e "\tadb       Android Debug Bridge over USB."
-	echo -e "\tuvc                              Webcam."
-	echo -e "\thid                    HID(vendor desc)."
-	echo -e "\tacm            Serial Port(/dev/ttyGS*)."
-	echo -e "\trndis                RNDIS NIC function."
-	echo -e "\tncm                  NCM NIC function."
+	echo -e "\tmsc(:dev/file)             Mass Storage(Bulk-Only)."
+	echo -e "\tuas(:dev/file)                  Mass Storage(UASP)."
+	echo -e "\tadb                  Android Debug Bridge over USB."
+	echo -e "\tmtp(:directory)            Media Transfer Protocol."
+	echo -e "\tuvc                                     USB Webcam."
+	echo -e "\tuac/uac1                            USB Audio v1.0."
+	echo -e "\tuac2                                USB Audio v1.0."
+	echo -e "\thid                               HID(vendor desc)."
+	echo -e "\tacm                       Serial Port(/dev/ttyGS*)."
+	echo -e "\trndis                           RNDIS NIC function."
+	echo -e "\tncm                           CDC-NCM NIC function."
+	echo -e "\tffs   linux/tools/usb/ffs-aio-example/*/device_app."
 	echo ""
-	echo -e "\tdhcp       config busybox.udhcpd for NIC"
-	echo -e "\t           func on usb0, NIC func need"
-	echo -e "\t           to be configured first!"
+	echo -e "\tdhcp    config busybox.udhcpd for NIC func on usb0,"
+	echo -e "\t           a NIC func need to be configured first!"
 	echo ""
 	echo -e "\nSpacemiT gadget-setup tool $SCRIPT_VERSION"
 	echo ""
@@ -254,16 +281,18 @@ uas_clean()
 adb_config()
 {
 	gadget_debug "add a adb function instance"
-	mkdir $GFUNC_PATH/ffs.adb
+	# use the name cabd means composite adb, 
+	# to avoid confict with system built-in adb function instance
+	mkdir $GFUNC_PATH/ffs.cadb
 }
 
 adb_link()
 {
 	gadget_debug "add adb to usb config"
-	ln -s $GFUNC_PATH/ffs.adb/ $GCONFIG/ffs.adb
+	ln -s $GFUNC_PATH/ffs.cadb/ $GCONFIG/ffs.cadb
 	mkdir /dev/usb-ffs
 	mkdir /dev/usb-ffs/adb
-	mount -o uid=2000,gid=2000 -t functionfs adb /dev/usb-ffs/adb/
+	mount -o uid=2000,gid=2000 -t functionfs cadb /dev/usb-ffs/adb/
 	#mkdir /dev/pts
 	#mount -t devpts -o defaults,mode=644,ptmxmode=666 devpts /dev/pts
 	adbd &
@@ -274,7 +303,7 @@ adb_unlink()
 {
 	gadget_debug "remove adb from usb config"
 	killall adbd
-	g_remove $GCONFIG/ffs.adb
+	g_remove $GCONFIG/ffs.cadb
 	[ -e /dev/usb-ffs/adb/ ] && umount /dev/usb-ffs/adb/
 	#[ -e /dev/pts ] && umount /dev/pts
 	#g_remove /dev/pts
@@ -285,7 +314,43 @@ adb_unlink()
 adb_clean()
 {
 	gadget_debug "clean adb"
-	g_remove $GFUNC_PATH/ffs.adb
+	g_remove $GFUNC_PATH/ffs.cadb
+}
+
+## FFS
+
+ffsdemo_config()
+{
+	gadget_debug "add a ffsdemo function instance"
+	mkdir $GFUNC_PATH/ffs.demo
+}
+
+ffsdemo_link()
+{
+	gadget_debug "add ffsdemo to usb config"
+
+	ln -s $GFUNC_PATH/ffs.demo/ $GCONFIG/ffs.demo
+	mkdir -p /dev/usb-ffs
+	mkdir /dev/usb-ffs/demo
+	mount -o uid=2000,gid=2000 -t functionfs ffsdemo /dev/usb-ffs/demo/
+	demod /dev/usb-ffs/demo &
+	sleep 1
+}
+
+ffsdemo_unlink()
+{
+	gadget_debug "remove ffsdemo from usb config"
+	killall demod
+	g_remove $GCONFIG/ffs.demo
+	[ -e /dev/usb-ffs/demo/ ] && umount /dev/usb-ffs/demo/
+	g_remove /dev/usb-ffs/demo
+	g_remove /dev/usb-ffs
+}
+
+ffsdemo_clean()
+{
+	gadget_debug "clean demo"
+	g_remove $GFUNC_PATH/ffs.demo
 }
 
 ## UVC
@@ -456,6 +521,60 @@ uvc_clean()
 	destroy_uvc_
 }
 
+## UAC
+
+db_convert_() {
+    raw=$(echo "$1 256" | awk '{printf "%.0f", $1 * $2}')
+    [ "$raw" -gt 32767 ] && raw=32767
+    [ "$raw" -lt -32767 ] && raw=-32767
+    echo "$raw"
+}
+
+uac_config() {
+    gadget_info "[uac] setup $UAC_VERSION"
+
+    UAC_FUNC=$GFUNC_PATH/${UAC_VERSION}.0
+    mkdir -p "$UAC_FUNC"
+
+    # playback params
+    echo "$UAC_P_CHMASK" > "$UAC_FUNC/p_chmask"
+    echo "$UAC_P_SSIZE" > "$UAC_FUNC/p_ssize"
+    echo "$UAC_P_STATE" > "$UAC_FUNC/p_srate"
+    echo "$(db_convert_ "$UAC_P_VOL_MIN")" > "$UAC_FUNC/p_volume_min"
+    echo "$(db_convert_ "$UAC_P_VOL_MAX")" > "$UAC_FUNC/p_volume_max"
+    echo "$UAC_P_VOL_RES" > "$UAC_FUNC/p_volume_res"
+    echo "$(db_convert_ "$UAC_P_VOL_CUR")" > "$UAC_FUNC/p_volume_present"
+
+    # capture params
+    echo "$UAC_C_CHMASK" > "$UAC_FUNC/c_chmask"
+    echo "$UAC_C_SSIZE" > "$UAC_FUNC/c_ssize"
+    echo "$UAC_C_STATE" > "$UAC_FUNC/c_srate"
+    echo "$(db_convert_ "$UAC_C_VOL_MIN")" > "$UAC_FUNC/c_volume_min"
+    echo "$(db_convert_ "$UAC_C_VOL_MAX")" > "$UAC_FUNC/c_volume_max"
+    echo "$UAC_C_VOL_RES" > "$UAC_FUNC/c_volume_res"
+    echo "$(db_convert_ "$UAC_C_VOL_CUR")" > "$UAC_FUNC/c_volume_present"
+}
+
+uac_link() {
+    gadget_info "[uac] linking $UAC_VERSION"
+    ln -s $GFUNC_PATH/${UAC_VERSION}.0 $GCONFIG/${UAC_VERSION}.0
+	gadget_info "UAC useful commands:"
+	gadget_info "    aplay -l"
+	gadget_info "    aplay test.wav -f dat -D hw:2,0"
+	gadget_info "    arecord -f dat -D hw:2,0 | aplay -f dat -D hw:0,0"
+}
+
+uac_unlink() {
+    gadget_info "[uac] unlinking $UAC_VERSION"
+    g_remove $GCONFIG/${UAC_VERSION}.0
+}
+
+uac_clean() {
+    gadget_info "[uac] cleaning $UAC_VERSION"
+    g_remove $GFUNC_PATH/${UAC_VERSION}.0
+}
+
+
 ## RNDIS
 
 rndis_config()
@@ -469,21 +588,12 @@ rndis_config()
 
 rndis_link()
 {
-
-	# Add Microsoft os descriptors to ensure
-	# Windows recognize us as an RNDIS compatible device
-	# thus no need to install driver manually.
-	# Verified on Windows 10.
 	echo 0xEF > $GADGET_PATH/bDeviceClass
 	echo 0x02 > $GADGET_PATH/bDeviceSubClass
 	echo 0x01 > $GADGET_PATH/bDeviceProtocol
-	echo 1 > $GADGET_PATH/os_desc/use
-	echo 0x1 > $GADGET_PATH/os_desc/b_vendor_code
-	echo "MSFT100" > $GADGET_PATH/os_desc/qw_sign
 	mkdir -p $GFUNC_PATH/rndis.0/os_desc/interface.rndis
 	echo RNDIS > $GFUNC_PATH/rndis.0/os_desc/interface.rndis/compatible_id
 	echo 5162001 > $GFUNC_PATH/rndis.0/os_desc/interface.rndis/sub_compatible_id
-	ln -s $GADGET_PATH/configs/c.1 $GADGET_PATH/os_desc/c.1
 	echo 10 > $GFUNC_PATH/rndis.0/qmult
 	ln -s $GFUNC_PATH/rndis.0 $GCONFIG
 	HOST_ADDR=`cat $GFUNC_PATH/rndis.0/host_addr`
@@ -491,13 +601,11 @@ rndis_link()
 	IFNAME=`cat $GFUNC_PATH/rndis.0/ifname`
 	gadget_info "rndis function enabled, mac(h): $HOST_ADDR, mac(g): $DEV_ADDR, ifname: $IFNAME."
 	gadget_info "execute ifconfig $IFNAME up to enable rndis iface."
-	gadget_info "run $name dhcp to start dhcp server, assign IP to your PC(debug only)"
 }
 
 rndis_unlink()
 {
 	[ -e $GFUNC_PATH/rndis.0/ifname ] && ifconfig `cat $GFUNC_PATH/rndis.0/ifname` down
-	g_remove $GADGET_PATH/os_desc/c.1
 	g_remove $GCONFIG/rndis.0
 }
 
@@ -510,45 +618,39 @@ rndis_clean()
 
 ncm_config()
 {
-	   OVERRIDE_VENDOR_FOR_WINDOWS=$1
-	   # create function instance
-	   # functions/<f_function allowed>.<instance name>
-	   # f_function allowed: ncm
-	   mkdir -p $GFUNC_PATH/ncm.0
+	OVERRIDE_VENDOR_FOR_WINDOWS=$1
+	# create function instance
+	# functions/<f_function allowed>.<instance name>
+	# f_function allowed: ncm
+	mkdir -p $GFUNC_PATH/ncm.0
 }
 
 ncm_link()
 {
-	   echo 0xEF > $GADGET_PATH/bDeviceClass
-	   echo 0x02 > $GADGET_PATH/bDeviceSubClass
-	   echo 0x01 > $GADGET_PATH/bDeviceProtocol
-	   echo 1 > $GADGET_PATH/os_desc/use
-	   echo 0x1 > $GADGET_PATH/os_desc/b_vendor_code
-	   echo "MSFT100" > $GADGET_PATH/os_desc/qw_sign
-	   mkdir -p $GFUNC_PATH/ncm.0/os_desc/interface.ncm
-	   echo WINNCM > $GFUNC_PATH/ncm.0/os_desc/interface.ncm/compatible_id
-	   # echo 5162001 > $GFUNC_PATH/ncm.0/os_desc/interface.ncm/sub_compatible_id
-	   echo 10 > $GFUNC_PATH/ncm.0/qmult
-	   ln -s $GADGET_PATH/configs/c.1 $GADGET_PATH/os_desc/c.1
-	   ln -s $GFUNC_PATH/ncm.0 $GCONFIG
-	   HOST_ADDR=`cat $GFUNC_PATH/ncm.0/host_addr`
-	   DEV_ADDR=`cat $GFUNC_PATH/ncm.0/dev_addr`
-	   IFNAME=`cat $GFUNC_PATH/ncm.0/ifname`
-	   gadget_info "ncm function enabled, mac(h): $HOST_ADDR, mac(g): $DEV_ADDR, ifname: $IFNAME."
-	   gadget_info "execute ifconfig $IFNAME up to enable ncm iface."
-	   gadget_info "run $name dhcp to start dhcp server, assign IP to PC(debug only)"
+	echo 0xEF > $GADGET_PATH/bDeviceClass
+	echo 0x02 > $GADGET_PATH/bDeviceSubClass
+	echo 0x01 > $GADGET_PATH/bDeviceProtocol
+	mkdir -p $GFUNC_PATH/ncm.0/os_desc/interface.ncm
+	echo WINNCM > $GFUNC_PATH/ncm.0/os_desc/interface.ncm/compatible_id
+	# echo 5162001 > $GFUNC_PATH/ncm.0/os_desc/interface.ncm/sub_compatible_id
+	echo 10 > $GFUNC_PATH/ncm.0/qmult
+	ln -s $GFUNC_PATH/ncm.0 $GCONFIG
+	HOST_ADDR=`tr -d '\000' < cat $GFUNC_PATH/ncm.0/host_addr`
+	DEV_ADDR=`tr -d '\000' < cat $GFUNC_PATH/ncm.0/dev_addr`
+	IFNAME=`cat $GFUNC_PATH/ncm.0/ifname`
+	gadget_info "ncm function enabled, mac(h): $HOST_ADDR, mac(g): $DEV_ADDR, ifname: $IFNAME."
+	gadget_info "execute ifconfig $IFNAME up to enable ncm iface."
 }
 
 ncm_unlink()
 {
-	   [ -e $GFUNC_PATH/ncm.0/ifname ] && ifconfig `cat $GFUNC_PATH/ncm.0/ifname` down
-	   g_remove $GADGET_PATH/os_desc/c.1
-	   g_remove $GCONFIG/ncm.0
+	[ -e $GFUNC_PATH/ncm.0/ifname ] && ifconfig `cat $GFUNC_PATH/ncm.0/ifname` down
+	g_remove $GCONFIG/ncm.0
 }
 
 ncm_clean()
 {
-	   g_remove $GFUNC_PATH/ncm.0
+	g_remove $GFUNC_PATH/ncm.0
 }
 
 ## HID
@@ -604,29 +706,47 @@ acm_clean()
 
 mtp_config()
 {
-	die "MTP Not Supported yet."
+	gadget_debug "add a mtp function instance"
+	mkdir $GFUNC_PATH/ffs.mtp
 }
 
 mtp_link()
 {
-	die "MTP Not Supported yet."
+	gadget_debug "add mtp to usb config"
+	ln -s $GFUNC_PATH/ffs.mtp/ $GCONFIG/ffs.mtp
+	# umtp-responder requires /dev/ffs-mtp as default,
+	# we don't bother to override it
+	mkdir -p /dev/ffs-mtp
+	mount -o uid=2000,gid=2000 -t functionfs mtp /dev/ffs-mtp
+
+	# Replace the string in MTP config to brand us...
+	mkdir -p /var/lib/umtp
+	sed -i 's/^manufacturer.*/manufacturer "SpacemiT Technologies"/' /etc/umtprd/umtprd.conf
+	sed -i 's/^product.*/product "SpacemiT Technologies"/' /etc/umtprd/umtprd.conf
+	umtprd &
+	sleep 1
 }
 
 mtp_unlink()
 {
-	die "MTP Not Supported yet."
+	gadget_debug "remove mtp from usb config"
+	killall umtprd
+	g_remove $GCONFIG/ffs.mtp
+	[ -e /dev/ffs-mtp ] && umount /dev/ffs-mtp
+	g_remove /dev/ffs-mtp
 }
 
 mtp_clean()
 {
-   die "MTP Not Supported yet."
+	gadget_debug "clean mtp"
+	g_remove $GFUNC_PATH/ffs.mtp
 }
 
 ## GADGET
 no_udc()
 {
-	gadget_info "Echo none to udc"
-	gadget_info "We are now trying to echo None to UDC......"
+	gadget_info "Echo none to UDC"
+	gadget_info "We are now trying to echo none to UDC......"
 	[ -e $GADGET_PATH/UDC ] || die "gadget not configured yet"
 	[ `cat $GADGET_PATH/UDC` ] && echo "" > $GADGET_PATH/UDC
 	gadget_info "echo none to UDC successfully done"
@@ -667,14 +787,16 @@ echo_udc()
 
 gconfig()
 {
-	# Override PID for function need driver install, windows sometimes cache vid/pid
-	[ $RNDIS = okay ] && PRODUC_ID=0x0020
-	[ $NCM = okay ] && PRODUC_ID=0x0019
 	gadget_info "config $VENDOR_ID/$PRODUC_ID/$SERNUM_STR/$MANUAF_STR/$PRODUC_STR."
 	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
 	[ -e $GADGET_PATH ] && die "ERROR: gadget already configured, should run stop first"
 	mkdir $GADGET_PATH
 	echo $VENDOR_ID > $GADGET_PATH/idVendor
+
+	# override pid in case WIndows Caches pid
+	[ $RNDIS = okay ] && PRODUC_ID=0x0020
+	[ $NCM = okay ] && PRODUC_ID=0x0019
+
 	echo $PRODUC_ID > $GADGET_PATH/idProduct
 	mkdir $GADGET_PATH/strings/0x409
 	echo $SERNUM_STR > $GADGET_PATH/strings/0x409/serialnumber
@@ -684,13 +806,22 @@ gconfig()
 	echo 0xc0 > $GCONFIG/bmAttributes
 	echo 500 > $GCONFIG/MaxPower
 	mkdir $GCONFIG/strings/0x409
-	# Windows rndis driver requires rndis to be the first interface
-	[ $RNDIS = okay ] && rndis_config
-	[ $NCM = okay ] && ncm_config
+
+	# os_desc to make Microsoft Windows happy
+	echo 1 > $GADGET_PATH/os_desc/use
+	echo 0x1 > $GADGET_PATH/os_desc/b_vendor_code
+	echo "MSFT100" > $GADGET_PATH/os_desc/qw_sign
+	ln -s "$GCONFIG" "$GADGET_PATH/os_desc/"
+
+	[ $FFS = okay ] &&  ffsdemo_config
 	[ $MSC = okay ] &&  msc_config
 	[ $UAS = okay ] &&  uas_config
+	[ $RNDIS = okay ] && rndis_config
 	[ $ADB = okay ] &&  adb_config
-	[ $UVC = okay ] &&  uvcg_config
+	[ $MTP = okay ] &&  mtp_config
+	[ $UVC = okay ] &&  uvc_config
+	[ $UAC = okay ] &&  uac_config
+	[ $NCM = okay ] &&  ncm_config
 	[ $HID = okay ] &&  hid_config
 	[ $HID = okay ] &&  acm_config
 }
@@ -703,9 +834,16 @@ gclean()
 	rndis_clean
 	ncm_clean
 	adb_clean
+	mtp_clean
+	ffsdemo_clean
 	uvc_clean
+	UAC_VERSION=uac1
+	uac_clean
+	UAC_VERSION=uac2
+	uac_clean
 	hid_clean
 	acm_clean
+
 	# Remove string in gadget
 	gadget_info "remove strings of $GADGET_PATH."
 	g_remove $GADGET_PATH/strings/0x409
@@ -716,12 +854,15 @@ gclean()
 
 glink()
 {
-	[ $RNDIS  = okay ] && rndis_link
-	[ $NCM  = okay ] && ncm_link
 	[ $MSC  = okay ] && msc_link
 	[ $UAS  = okay ] && uas_link
+	[ $RNDIS  = okay ] && rndis_link
+	[ $NCM  = okay ] && ncm_link
 	[ $ADB  = okay ] && adb_link
+	[ $MTP  = okay ] && mtp_link
+	[ $FFS  = okay ] && ffsdemo_link
 	[ $UVC  = okay ] && uvc_link
+	[ $UAC  = okay ] && uac_link
 	[ $HID  = okay ] && hid_link
 	[ $ACM  = okay ] && hid_link
 }
@@ -729,12 +870,18 @@ glink()
 gunlink()
 {
 	[ -e $GADGET_PATH/UDC ] || die "gadget not configured yet"
-	rndis_unlink
-	ncm_unlink
 	msc_unlink
 	uas_unlink
+	rndis_unlink
+	ncm_unlink
 	adb_unlink
+	mtp_unlink
+	ffsdemo_unlink
 	uvc_unlink
+	UAC_VERSION=uac1
+	uac_unlink
+	UAC_VERSION=uac2
+	uac_unlink
 	hid_unlink
 	acm_unlink
 	# Remove strings:
@@ -742,6 +889,7 @@ gunlink()
 	g_remove $GCONFIG/strings/0x409
 	# Remove config:
 	gadget_info "remove configs c.1."
+	g_remove $GADGET_PATH/os_desc/c.1
 	g_remove $GCONFIG
 }
 
@@ -768,6 +916,14 @@ select_one()
 		"uvc"|"video|webcam")
 			UVC=okay
 			;;
+		"uac"|"uac1")
+			UAC_VERSION=uac1
+			UAC=okay
+			;;
+		"uac2")
+			UAC_VERSION=uac2
+			UAC=okay
+			;;
 		uas*|uasp*)
 			UAS=okay
 			UAS_ARG=$(echo $func | awk -F: '{print $2}')
@@ -775,14 +931,18 @@ select_one()
 		"rndis"|"network"|"net"|"if")
 			RNDIS=okay
 			;;
-		"ncm"|"cdc_ncm")
+		"ncm")
 			NCM=okay
-			;;
-		"mtp")
-			MTP=okay
 			;;
 		"adb"|"fastboot"|"adbd")
 			ADB=okay
+			;;
+		"mtp")
+			MTP=okay
+			MTP_ARG=$(echo $func | awk -F: '{print $2}')
+			;;
+		"ffsdemo"|"ffsdemod"|"ffs")
+			FFS=okay
 			;;
 		"hid")
 			HID=okay
@@ -825,14 +985,19 @@ gstart()
 	glink
 	[ $FUNCTION_CNT -lt 1 ] && die "No function selected, will not pullup."
 	echo_udc $1
-	## improve u_ether(rndis/ncm) performance
-	# echo "now enable usb0 rps, set rps_cpus to:"
-	# echo 70 > /sys/class/net/usb0/queues/rx-0/rps_cpus
-	# cat /sys/class/net/usb0/queues/rx-0/rps_cpus
+	if [[ "$RNDIS" == "okay" || "$NCM" == "okay" ]]; then
+		echo "now enable usb0 rps, set rps_cpus to:"
+		echo 70 > /sys/class/net/usb0/queues/rx-0/rps_cpus
+		cat /sys/class/net/usb0/queues/rx-0/rps_cpus
+	fi
+	[ "$ACM" == "okay" ] && echo Serial poart of ourside is: /dev/ttyGS$(cat $GFUNC_PATH/acm.0/port_num)
 }
 
 gstop()
 {
+	if [ "$#" -gt 0 ]; then
+		GADGET_PATH="/sys/kernel/config/usb_gadget/$1"
+	fi
 	no_udc
 	gunlink
 	gclean
@@ -931,28 +1096,28 @@ set_role() {
 
 config_dhcp()
 {
-	   rm -f /var/lib/misc/udhcpd.leases
-	   gadget_info "old lease file destroyed (/var/lib/misc/udhcpd.leases)"
-	   gadget_info "overriding /etc/udhcpd.conf..."
-	   echo "start  $YOURIP" > /etc/udhcpd.conf
-	   echo "end   $YOURIP" >> /etc/udhcpd.conf
-	   echo "interface   usb0" >> /etc/udhcpd.conf
-	   echo "max_leases  1" >> /etc/udhcpd.conf
-	   echo "pidfile /var/run/udhcpd.pid" >> /etc/udhcpd.conf
-	   echo "lease_file  /var/lib/misc/udhcpd.leases" >> /etc/udhcpd.conf
-	   echo "opt  router  $MYIP" >> /etc/udhcpd.conf
-	   echo "option  subnet  $MYNETMASK" >> /etc/udhcpd.conf
-	   echo "option  domain  local" >>  /etc/udhcpd.conf
-	   echo "option  lease   864000" >> /etc/udhcpd.conf
-	   ifconfig usb0 down
-	   ifconfig usb0 $MYIP netmask $MYNETMASK up
-	   sleep 1
-	   busybox udhcpd /etc/udhcpd.conf
-	   gadget_info "udhcpcd now running..."
-	   ps | grep udhcpd | grep -v grep
-	   gadget_info "Configure your usb host ncm interface to dhcp mode"
-	   gadget_info "The IP of USB host ncm iface: $YOURIP"
-	   gadget_info "Our IP as router: $MYIP"
+	rm -f /var/lib/misc/udhcpd.leases
+	gadget_info "old lease file destroyed (/var/lib/misc/udhcpd.leases)"
+	gadget_info "overriding /etc/udhcpd.conf..."
+	echo "start  $YOURIP" > /etc/udhcpd.conf
+	echo "end   $YOURIP" >> /etc/udhcpd.conf
+	echo "interface   usb0" >> /etc/udhcpd.conf
+	echo "max_leases  1" >> /etc/udhcpd.conf
+	echo "pidfile /var/run/udhcpd.pid" >> /etc/udhcpd.conf
+	echo "lease_file  /var/lib/misc/udhcpd.leases" >> /etc/udhcpd.conf
+	echo "opt  router  $MYIP" >> /etc/udhcpd.conf
+	echo "option  subnet  $MYNETMASK" >> /etc/udhcpd.conf
+	echo "option  domain  local" >>  /etc/udhcpd.conf
+	echo "option  lease   864000" >> /etc/udhcpd.conf
+	ifconfig usb0 down
+	ifconfig usb0 $MYIP netmask $MYNETMASK up
+	sleep 1
+	busybox udhcpd /etc/udhcpd.conf
+	gadget_info "udhcpcd now running..."
+	ps | grep udhcpd | grep -v grep
+	gadget_info "Configure your usb host ncm interface to dhcp mode"
+	gadget_info "The IP of USB host ncm iface: $YOURIP"
+	gadget_info "Our IP: $MYIP"
 }
 
 print_info()
@@ -974,7 +1139,7 @@ print_info()
 ## MAIN
 case "$1" in
 	stop|clean)
-		gstop
+		gstop $2
 		;;
 	restart|reload)
 		gstop
